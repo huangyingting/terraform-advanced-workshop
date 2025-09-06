@@ -7,11 +7,8 @@ terraform {
     }
   }
   backend "azurerm" {
-    resource_group_name  = "REPLACE-rg"
-    storage_account_name = "REPLACEstorage"
-    container_name       = "tfstate"
-    key                  = "application.tfstate"
-    use_azuread_auth     = true
+    container_name   = "tfstate"
+    use_azuread_auth = true
   }
 }
 
@@ -28,14 +25,31 @@ variable "location" {
   default = "southeastasia"
 }
 
+# Backend configuration variables for remote state
+variable "backend_resource_group_name" {
+  type        = string
+  description = "Resource group name for the backend storage account"
+}
+
+variable "backend_storage_account_name" {
+  type        = string
+  description = "Storage account name for the backend"
+}
+
+variable "backend_container_name" {
+  type        = string
+  description = "Storage container name for the backend"
+  default     = "tfstate"
+}
+
 # Remote state from networking layer
 data "terraform_remote_state" "network" {
   backend = "azurerm"
   config = {
-    resource_group_name  = "REPLACE-rg"
-    storage_account_name = "REPLACEstorage"
-    container_name       = "tfstate"
-    key                  = "networking.tfstate"
+    resource_group_name  = var.backend_resource_group_name
+    storage_account_name = var.backend_storage_account_name
+    container_name       = var.backend_container_name
+    key                  = "infrastructure.tfstate"
     use_azuread_auth     = true
   }
 }

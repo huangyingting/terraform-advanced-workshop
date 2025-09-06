@@ -1,59 +1,7 @@
 # Lab 1: Remote State & Layered Architecture
 
 ## Overview
-This lab demonstrates enterprise-grade Terraform state management using Azure Blob Storage as a remote backend with state locking, versioning, and soft delete. You'll learn how to implement a layered architecture pattern where infrastructure is split into logical tiers that share data through remote state data sources.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Azure Subscription                         │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┤
-│  │               Foundation Layer                              │
-│  │  ┌─────────────────────────────────────────────────────────┤
-│  │  │  Resource Group: rg-terraform-state                     │
-│  │  │  ┌─────────────────────────────────────────────────────┤
-│  │  │  │  Storage Account: sttfstate[random]                 │
-│  │  │  │  ├── Container: tfstate                             │
-│  │  │  │  │   ├── backend.tfstate (foundation config)       │
-│  │  │  │  │   ├── networking.tfstate                        │
-│  │  │  │  │   └── application.tfstate                       │
-│  │  │  │  ├── Versioning: Enabled                           │
-│  │  │  │  ├── Soft Delete: 30 days                          │
-│  │  │  │  └── State Locking: Blob lease mechanism           │
-│  │  │  └─────────────────────────────────────────────────────┘
-│  │  └─────────────────────────────────────────────────────────┘
-│  │                                                             │
-│  │  ┌─────────────────────────────────────────────────────────┤
-│  │  │               Networking Layer                          │
-│  │  │  ┌─────────────────────────────────────────────────────┤
-│  │  │  │  Resource Group: rg-networking                      │
-│  │  │  │  ├── Virtual Network: vnet-main (10.0.0.0/16)      │
-│  │  │  │  ├── Subnet: subnet-app (10.0.1.0/24)              │
-│  │  │  │  ├── Network Security Group: nsg-app               │
-│  │  │  │  └── NSG Association                                │
-│  │  │  └─────────────────────────────────────────────────────┘
-│  │  └─────────────────────────────────────────────────────────┘
-│  │                                                             │
-│  │  ┌─────────────────────────────────────────────────────────┤
-│  │  │               Application Layer                         │
-│  │  │  ┌─────────────────────────────────────────────────────┤
-│  │  │  │  Resource Group: rg-application                     │
-│  │  │  │  ├── Linux VM: vm-app-001                           │
-│  │  │  │  ├── Network Interface: nic-vm-app-001              │
-│  │  │  │  ├── OS Disk: Premium SSD                           │
-│  │  │  │  ├── Data Disk: Standard SSD (optional)             │
-│  │  │  │  └── NSG: Allow SSH from specific IP               │
-│  │  │  └─────────────────────────────────────────────────────┘
-│  │  └─────────────────────────────────────────────────────────┘
-│  └─────────────────────────────────────────────────────────────┘
-│                                                                 │
-│  Data Flow:                                                     │
-│  networking.tfstate → outputs subnet_id                        │
-│  application.tfstate → data "terraform_remote_state" → subnet_id│
-└─────────────────────────────────────────────────────────────────┘
-```
+This lab demonstrates enterprise-grade Terraform state management using Azure Blob Storage as a remote backend with separated backend configuration files. You'll implement a layered architecture pattern where infrastructure and application components are split into logical tiers that share data through remote state data sources. The lab showcases how to use `.tfbackend` files for flexible backend configuration, eliminating hardcoded values and enabling environment-specific deployments.
 
 ## Prerequisites
 
@@ -74,24 +22,11 @@ This lab demonstrates enterprise-grade Terraform state management using Azure Bl
 # Verify Azure CLI authentication
 az account show
 
-# Set default location
+# Set default location (optional)
 export TF_VAR_location="southeastasia"
 
 # Set subscription ID
 export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-
-```
-
-## Directory Structure
-```
-lab1/
-├── prepare.sh              # Bootstrap script for backend setup
-├── infrastructure/         # Foundation layer (backend setup)
-│   └── main.tf
-├── application/            # Application layer
-│   ├── main.tf
-│   └── data.tf            # Remote state data source
-└── README.md              # This file
 ```
 
 ## Step-by-Step Instructions
@@ -113,28 +48,25 @@ lab1/
    - Create a resource group for state storage
    - Create a storage account with unique naming
    - Create a blob container named `tfstate`
-   - Replace placeholders in configuration files
+   - Generate separated backend configuration files:
+     - `infrastructure/infrastructure.tfbackend`
+     - `application/application.tfbackend`
+     - `application/terraform.tfvars`
    - Configure versioning and security settings
 
    Environment variable overrides (all optional):
    ```bash
-   RESOURCE_GROUP=my-tf-rg LOCATION=westeurope STORAGE_ACCOUNT=customtfstate123 ./prepare.sh
+   RESOURCE_GROUP=my-tf-rg LOCATION=westeurope ./prepare.sh
    ```
 
-### Step 2: Set Required Environment Variables
+### Step 2: Deploy the Infrastructure Layer
 
-Before running `terraform init`, you need to set your Azure subscription ID:
-
-```bash
-export ARM_SUBSCRIPTION_ID=$(az account show --query id --output tsv)
-```
-
-1. **Deploy the networking infrastructure:**
+1. **Navigate to infrastructure directory and initialize:**
    ```bash
    cd infrastructure
    
-   # Initialize Terraform with remote backend
-   terraform init
+   # Initialize Terraform with backend config file
+   terraform init -backend-config=infrastructure.tfbackend
    
    # Review the configuration
    terraform plan
@@ -149,21 +81,23 @@ export ARM_SUBSCRIPTION_ID=$(az account show --query id --output tsv)
 2. **Verify the remote state:**
    ```bash
    # Check that state file exists in blob storage
-   STORAGE_ACCOUNT=$(az storage account list --resource-group rg-terraform-state --query "[0].name" --output tsv)
+   STORAGE_ACCOUNT=$(grep storage_account_name infrastructure.tfbackend | cut -d'"' -f2)
+   RESOURCE_GROUP=$(grep resource_group_name infrastructure.tfbackend | cut -d'"' -f2)
+   
    az storage blob list \
      --account-name $STORAGE_ACCOUNT \
      --container-name tfstate \
      --output table
    ```
 
-### Step 4: Deploy the Application Layer
+### Step 3: Deploy the Application Layer
 
 1. **Navigate to application directory and deploy:**
    ```bash
    cd ../application
    
-   # Initialize with remote backend
-   terraform init
+   # Initialize with backend config file
+   terraform init -backend-config=application.tfbackend
    
    # Verify remote state access
    terraform refresh
@@ -171,7 +105,7 @@ export ARM_SUBSCRIPTION_ID=$(az account show --query id --output tsv)
    # Plan the deployment
    terraform plan
    
-   # Deploy the infrastructure
+   # Deploy the application
    terraform apply -auto-approve
    
    # Display outputs including SSH command
@@ -185,172 +119,35 @@ export ARM_SUBSCRIPTION_ID=$(az account show --query id --output tsv)
    echo "SSH Command: $SSH_COMMAND"
    
    # Test the connection (optional)
-   # eval $SSH_COMMAND "sudo apt update && sudo apt install -y nginx && sudo systemctl start nginx"
+   # eval $SSH_COMMAND "sudo apt update && sudo apt install -y nginx"
    ```
 
-## Key Terraform Patterns Demonstrated
+### Step 4: Verify the Architecture
 
-### 1. Remote Backend Configuration
-```hcl
-terraform {
-  backend "azurerm" {
-    resource_group_name  = "rg-terraform-state"
-    storage_account_name = "sttfstateXXXXXX"
-    container_name       = "tfstate"
-    key                  = "networking.tfstate"
-  }
-}
-```
-
-### 2. Remote State Data Source
-```hcl
-data "terraform_remote_state" "networking" {
-  backend = "azurerm"
-  config = {
-    resource_group_name  = "rg-terraform-state"
-    storage_account_name = "sttfstateXXXXXX"
-    container_name       = "tfstate"
-    key                  = "networking.tfstate"
-  }
-}
-```
-
-### 3. Cross-Layer Resource References
-```hcl
-resource "azurerm_network_interface" "vm" {
-  # Reference subnet from networking layer
-  ip_configuration {
-    subnet_id = data.terraform_remote_state.networking.outputs.app_subnet_id
-  }
-}
-```
-
-### 4. State Management Features
-- **State Locking**: Automatic blob lease mechanism prevents concurrent modifications
-- **Versioning**: Storage account versioning provides rollback capabilities
-- **Soft Delete**: 30-day retention for deleted state files
-- **Encryption**: Server-side encryption for state file security
-
-## Verification Steps
-
-### Verify Remote State Setup
-```bash
-# List all state files in blob storage
-az storage blob list \
-  --account-name $STORAGE_ACCOUNT \
-  --container-name tfstate \
-  --output table
-
-# Check networking state
-cd infrastructure
-terraform state list
-
-# Check application state
-cd ../application
-terraform state list
-
-# Verify remote state data access
-terraform console << 'EOF'
-data.terraform_remote_state.networking.outputs
-EOF
-```
-
-### Test Infrastructure
-```bash
-# Get VM public IP
-VM_IP=$(terraform output -raw vm_public_ip)
-echo "VM Public IP: $VM_IP"
-
-# Test network connectivity
-ping -c 3 $VM_IP || echo "VM might not be responding to ping"
-
-# Check SSH port
-nc -zv $VM_IP 22
-```
-
-## Troubleshooting
-
-### Common Issues and Solutions
-
-#### Backend Configuration Issues
-**Error**: `Failed to configure the backend "azurerm"`
-
-**Solution**:
-```bash
-# Verify storage account exists and is accessible
-az storage account show --name $STORAGE_ACCOUNT --resource-group rg-terraform-state
-
-# Check container exists
-az storage container show --name tfstate --account-name $STORAGE_ACCOUNT
-
-# Verify permissions
-az role assignment list --assignee $(az account show --query user.name -o tsv) --resource-group rg-terraform-state
-```
-
-#### Remote State Access Issues
-**Error**: `Error loading state: blob doesn't exist`
-
-**Solution**:
-```bash
-# Verify the networking layer has been deployed first
-cd infrastructure
-terraform state list
-
-# Check the exact state file name in storage
-az storage blob list --container-name tfstate --account-name $STORAGE_ACCOUNT --output table
-```
-
-#### SSH Key Issues
-**Error**: SSH authentication failures
-
-**Solution**:
-```bash
-# Check if SSH key was created correctly
-ls -la ~/.ssh/
-ls -la ./lab_ssh_key.pem
-
-# Verify SSH key in VM configuration
-terraform show | grep -A 5 "public_key"
-
-# Test SSH key format
-ssh-keygen -l -f ~/.ssh/id_rsa.pub 2>/dev/null || echo "Key file issue"
-```
-
-#### State Locking Issues
-**Error**: `Error acquiring the state lock`
-
-**Solution**:
-```bash
-# Check for existing locks
-az storage blob list --container-name tfstate --account-name $STORAGE_ACCOUNT --include u --output table
-
-# Force unlock (use with caution)
-terraform force-unlock <LOCK_ID>
-```
-
-### State Management Best Practices
-
-1. **Backup Strategy**:
+1. **Check separated state files:**
    ```bash
-   # Manual state backup
-   terraform state pull > terraform.tfstate.backup
+   # List all state files in blob storage
+   az storage blob list \
+     --account-name $STORAGE_ACCOUNT \
+     --container-name tfstate \
+     --output table
    
-   # Verify storage account versioning
-   az storage blob list --container-name tfstate --account-name $STORAGE_ACCOUNT --include v
+   # Should show:
+   # - infrastructure.tfstate
+   # - application.tfstate
    ```
 
-2. **State File Security**:
+2. **Verify cross-layer data sharing:**
    ```bash
-   # Check access permissions
-   az storage container show-permission --name tfstate --account-name $STORAGE_ACCOUNT
-   
-   # Verify encryption
-   az storage account show --name $STORAGE_ACCOUNT --query "encryption"
+   cd application
+   terraform console << 'EOF'
+   data.terraform_remote_state.network.outputs
+   EOF
    ```
 
-## Clean Up
+### Step 5: Clean Up
 
-When you're ready to clean up the resources:
+When ready to clean up:
 
 1. **Destroy application layer:**
    ```bash
@@ -366,34 +163,47 @@ When you're ready to clean up the resources:
 
 3. **Remove state storage (optional):**
    ```bash
-   cd ..
-   
    # Delete the storage account and resource group
-   az group delete --name rg-terraform-state --yes --no-wait
+   RESOURCE_GROUP=$(grep resource_group_name infrastructure.tfbackend | cut -d'"' -f2)
+   az group delete --name $RESOURCE_GROUP --yes --no-wait
    ```
-
-⚠️ **Note**: Always destroy in reverse dependency order (application → infrastructure → foundation).
 
 ## Key Learning Outcomes
 
-After completing this lab, you'll have:
-- ✅ Production-ready remote state configuration
-- ✅ Understanding of layered architecture patterns
-- ✅ Experience with cross-layer data sharing
-- ✅ State locking and versioning implementation
-- ✅ Security best practices for state files
-- ✅ Troubleshooting skills for remote state issues
+After completing this lab, you will have learned:
 
-## Next Steps
+- ✅ **Separated Backend Configuration**: How to use `.tfbackend` files to eliminate hardcoded backend values
+- ✅ **Layered Architecture**: Implementing infrastructure and application layers with proper separation of concerns
+- ✅ **Remote State Management**: Configuring Azure Blob Storage as a secure remote backend with state locking
+- ✅ **Cross-Layer Data Sharing**: Using remote state data sources to share outputs between Terraform configurations
+- ✅ **Partial Backend Configuration**: Leveraging Terraform's partial backend configuration for flexibility
+- ✅ **State File Organization**: Managing multiple state files for different architectural layers
+- ✅ **Enterprise Patterns**: Implementing production-ready Terraform state management practices
 
-Consider exploring:
-- Terraform workspaces for environment isolation
-- State encryption and access control patterns
-- Automated state management in CI/CD pipelines
-- Advanced backend configurations (partial backend config)
-- State migration strategies
+## Thoughtful Questions
+
+Consider these questions as you reflect on this lab:
+
+1. **Architecture Design**: How would you modify this pattern to support multiple environments (dev, staging, prod) without duplicating configuration files?
+
+2. **State Management**: What are the trade-offs between having separate state files per layer versus a single monolithic state file?
+
+3. **Security Considerations**: How could you implement different access controls for infrastructure vs application teams using this pattern?
+
+4. **CI/CD Integration**: How would you adapt this backend configuration approach for automated deployment pipelines?
+
+5. **Scalability**: As your infrastructure grows to include databases, monitoring, and networking layers, how would you organize the state files and dependencies?
+
+6. **Recovery Scenarios**: If the infrastructure state file becomes corrupted, how would you recover while minimizing impact on the application layer?
 
 ## Additional Resources
+
+- [Terraform Backend Configuration](https://www.terraform.io/docs/language/backend/index.html)
+- [Azure Storage Backend](https://www.terraform.io/docs/language/backend/azurerm.html)  
+- [Remote State Data Source](https://www.terraform.io/docs/language/state/remote-state-data.html)
+- [Partial Backend Configuration](https://www.terraform.io/docs/language/backend/azurerm.html#partial-configuration)
+- [Azure Blob Storage Versioning](https://docs.microsoft.com/en-us/azure/storage/blobs/versioning-overview)
+- [Terraform State Locking](https://www.terraform.io/docs/language/state/locking.html)
 
 - [Terraform Backend Configuration](https://www.terraform.io/docs/language/backend/index.html)
 - [Azure Storage Backend](https://www.terraform.io/docs/language/backend/azurerm.html)

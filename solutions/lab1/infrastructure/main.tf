@@ -7,11 +7,8 @@ terraform {
     }
   }
   backend "azurerm" {
-    resource_group_name  = "REPLACE-rg"
-    storage_account_name = "REPLACEstorage"
-    container_name       = "tfstate"
-    key                  = "networking.tfstate"
-    use_azuread_auth     = true
+    container_name   = "tfstate"
+    use_azuread_auth = true
   }
 }
 
