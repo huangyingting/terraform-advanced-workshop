@@ -1,6 +1,6 @@
-# Hands-On Labs: Enterprise Azure with Terraform
+# Terraform Advanced Workshop
 
-This lab series maps directly to the six advanced course modules. Each lab is self‑contained, builds real Azure artifacts, and reinforces enterprise patterns (layered architecture, landing zones with AVM, hybrid management, DevSecOps CI/CD, security & governance, brownfield + AI enablement).
+This lab series maps directly to the five advanced course modules. Each lab is self‑contained, builds real Azure artifacts, and reinforces enterprise patterns (layered architecture, landing zones with AVM, hybrid management, DevSecOps CI/CD, security & governance, brownfield + AI enablement).
 
 ## Lab Index
 | Lab | Title | Core Focus | Key Azure Services | GitHub / Tooling Focus |
@@ -39,11 +39,22 @@ Implement a production-ready Terraform remote state backend using Azure Blob Sto
 - Apply enterprise-grade state management and dependency patterns
 
 ### Architecture
-```
-Foundation Layer (Backend) → Networking Layer → Application Layer
-     ↓                           ↓                    ↓
-State Storage Setup    →    VNet, Subnets, NSG   →   VM, Data Disks
-(backend.tfstate)          (networking.tfstate)     (application.tfstate)
+```mermaid
+graph TB
+    subgraph "Azure Storage Account<br/>(Remote Backend)"    
+        NS1[networking.tfstate]
+        AS1[application.tfstate]
+    end
+    
+    subgraph "Layers"
+        NL[Networking Layer<br/>VNet, Subnets, NSG]
+        AL[Application Layer<br/>VM, Data Disks]
+    end
+        
+    NL -.-> NS1
+    AL -.-> AS1
+    
+    AL -->|terraform_remote_state| NS1
 ```
 
 ### Prerequisites
@@ -144,72 +155,93 @@ Implement a production-ready CI/CD pipeline for Terraform using GitHub Actions w
 - Implement secure secret management without long-lived credentials
 
 ### Architecture
-```
-GitHub Repository
-    ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                     GitHub Actions Workflows                   │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┤
-│  │                    PR Workflow                              │
-│  │  Trigger: pull_request → branches: [main]                  │
-│  │  ┌─────────────────────────────────────────────────────────┤
-│  │  │  1. Checkout Code                                       │
-│  │  │  2. Azure OIDC Login                                    │
-│  │  │  3. Terraform Setup                                     │
-│  │  │  4. Format Check                                        │
-│  │  │  5. Validate                                            │
-│  │  │  6. Plan (staging & prod)                               │
-│  │  │  7. Comment Plan on PR                                  │
-│  │  └─────────────────────────────────────────────────────────┘
-│  └─────────────────────────────────────────────────────────────┘
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┤
-│  │                 Deploy Workflow                             │
-│  │  Trigger: push → branches: [main]                          │
-│  │  ┌─────────────────────────────────────────────────────────┤
-│  │  │              Staging Job                                │
-│  │  │  1. Checkout & Setup                                    │
-│  │  │  2. Azure OIDC Login                                    │
-│  │  │  3. Terraform Plan                                      │
-│  │  │  4. Terraform Apply (Auto)                              │
-│  │  └─────────────────────────────────────────────────────────┘
-│  │                      ↓                                     │
-│  │  ┌─────────────────────────────────────────────────────────┤
-│  │  │             Production Job                              │
-│  │  │  Depends on: staging                                    │
-│  │  │  Environment: production (protected)                    │
-│  │  │  ┌─────────────────────────────────────────────────────┤
-│  │  │  │  → Manual Approval Required ←                       │
-│  │  │  │  1. Checkout & Setup                                │
-│  │  │  │  2. Azure OIDC Login                                │
-│  │  │  │  3. Terraform Plan                                  │
-│  │  │  │  4. Terraform Apply                                 │
-│  │  │  └─────────────────────────────────────────────────────┘
-│  │  └─────────────────────────────────────────────────────────┘
-│  └─────────────────────────────────────────────────────────────┘
-└─────────────────────────────────────────────────────────────────┘
-                                 ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                      Azure Environment                         │
-│  ┌─────────────────────────────────────────────────────────────┤
-│  │  Microsoft Entra ID (Azure AD)                             │
-│  │  ├── App Registration: github-actions-terraform            │
-│  │  ├── Federated Credentials: repo-branch-main               │
-│  │  ├── Federated Credentials: repo-pull-request              │
-│  │  └── Service Principal: with Contributor role              │
-│  └─────────────────────────────────────────────────────────────┘
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┤
-│  │  Azure Subscription                                        │
-│  │  ├── Staging Environment (rg-terraform-staging)            │
-│  │  │   ├── Storage Account: staging backend                  │
-│  │  │   └── Application Resources                             │
-│  │  └── Production Environment (rg-terraform-production)      │
-│  │      ├── Storage Account: production backend               │
-│  │      └── Application Resources                             │
-│  └─────────────────────────────────────────────────────────────┘
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "GitHub Repository"
+        GR[Repository Code]
+    end
+    
+    subgraph "GitHub Actions Workflows"
+        subgraph "PR Workflow"
+            PR1[Checkout Code]
+            PR2[Azure OIDC Login]
+            PR3[Terraform Setup]
+            PR4[Format Check]
+            PR5[Validate]
+            PR6[Plan staging & prod]
+            PR7[Comment Plan on PR]
+            
+            PR1 --> PR2 --> PR3 --> PR4 --> PR5 --> PR6 --> PR7
+        end
+        
+        subgraph "Deploy Workflow"
+            subgraph "Staging Job"
+                S1[Checkout & Setup]
+                S2[Azure OIDC Login]
+                S3[Terraform Plan]
+                S4[Terraform Apply Auto]
+                
+                S1 --> S2 --> S3 --> S4
+            end
+            
+            subgraph "Production Job"
+                PA[Manual Approval Required]
+                P1[Checkout & Setup]
+                P2[Azure OIDC Login]
+                P3[Terraform Plan]
+                P4[Terraform Apply]
+                
+                PA --> P1 --> P2 --> P3 --> P4
+            end
+            
+            S4 --> PA
+        end
+    end
+    
+    subgraph "Azure Environment"
+        subgraph "Microsoft Entra ID"
+            AR[App Registration:<br/>github-actions-terraform]
+            FC1[Federated Credentials:<br/>repo-branch-main]
+            FC2[Federated Credentials:<br/>repo-pull-request]
+            SP[Service Principal:<br/>Contributor role]
+            
+            AR --- FC1
+            AR --- FC2
+            AR --- SP
+        end
+        
+        subgraph "Azure Subscription"
+            subgraph "Staging Environment"
+                SRG[rg-terraform-staging]
+                SSA[Storage Account: staging backend]
+                SAR[Application Resources]
+                
+                SRG --- SSA
+                SRG --- SAR
+            end
+            
+            subgraph "Production Environment"
+                PRG[rg-terraform-production]
+                PSA[Storage Account: production backend]
+                PAR[Application Resources]
+                
+                PRG --- PSA
+                PRG --- PAR
+            end
+        end
+    end
+    
+    GR -->|pull_request| PR1
+    GR -->|push to main| S1
+    
+    PR2 -.-> SP
+    S2 -.-> SP
+    P2 -.-> SP
+    
+    S4 -.-> SSA
+    P4 -.-> PSA
+    
+
 ```
 
 ### Prerequisites
