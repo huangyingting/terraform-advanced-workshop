@@ -1,0 +1,44 @@
+{
+  "name": "terraform-web-app-module",
+  "version": "1.0.0",
+  "description": "A Terraform module for deploying Azure Web Apps with quality gates and automation",
+  "main": "modules/web_app/main.tf",
+  "scripts": {
+    "test": "cd tests && go test -v -timeout 30m",
+    "test:unit": "cd tests && go test -v -short -timeout 5m",
+    "lint": "tflint --format compact modules/web_app/ && tflint --format compact examples/basic/",
+    "security": "checkov --config-file .checkov.yml --directory .",
+    "validate": "./scripts/validate.sh",
+    "semantic-release": "semantic-release"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/terraform-advanced-workshop.git"
+  },
+  "keywords": [
+    "terraform",
+    "azure",
+    "web-app",
+    "infrastructure",
+    "devops",
+    "quality-gates",
+    "automation"
+  ],
+  "author": "Platform Engineering Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^9.2.6",
+    "semantic-release": "^22.0.12"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "terraform": {
+    "required_version": ">= 1.7.0",
+    "required_providers": {
+      "azurerm": ">= 3.100.0"
+    }
+  }
+}

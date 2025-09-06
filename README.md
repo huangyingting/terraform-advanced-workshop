@@ -85,6 +85,58 @@ Deploy a Cloud Adoption Framework (CAF) compliant Azure Landing Zone using Azure
 - Set up centralized logging and monitoring infrastructure
 - Deploy hub networking with Azure Firewall for secure connectivity
 
+### Architecture
+```mermaid
+graph TB
+    subgraph "Azure Tenant"
+        subgraph "Management Group Hierarchy"
+            ALZ[alz<br/>Root Management Group]
+            ALZP[alz-platform]
+            ALZLZ[alz-landing-zones]
+            ALZM[alz-management]
+            ALZC[alz-connectivity]
+            ALZO[alz-online]
+            ALZCORP[alz-corp]
+            
+            ALZ --> ALZP
+            ALZ --> ALZLZ
+            ALZP --> ALZM
+            ALZP --> ALZC
+            ALZLZ --> ALZO
+            ALZLZ --> ALZCORP
+        end
+        
+        subgraph "Management Subscription"
+            LAW[Log Analytics<br/>Workspace]
+            DCR[Data Collection<br/>Rules]
+            UAMI[User-Assigned<br/>Managed Identity]
+            MS[Monitoring<br/>Solutions]
+            
+            LAW --- DCR
+            LAW --- UAMI
+            LAW --- MS
+        end
+        
+        subgraph "Connectivity Subscription"
+            HVN[Hub Virtual Network]
+            AF[Azure Firewall]
+            PIP[Public IP]
+            AFS[AzureFirewallSubnet]
+            US[User Subnets]
+            
+            HVN --- AF
+            AF --- PIP
+            HVN --- AFS
+            HVN --- US
+            AF --- AFS
+        end
+        
+        ALZM -.-> LAW
+        ALZC -.-> HVN
+    end
+
+```
+
 ### Prerequisites
 - Tenant-level Management Group write permissions (Owner or User Access Administrator role)
 - Two Azure subscription IDs (management and connectivity subscriptions)
@@ -106,40 +158,96 @@ For detailed step-by-step instructions, see [Lab 2 README](solutions/lab2/README
 ---
 ## Lab 3: Advanced Policy as Code & Remediation
 ### Objective
-Author custom policies + initiative (policy set), assign with parameters, enable deployIfNotExists remediation, trigger remediation tasks via Terraform.
+Implement enterprise-grade Azure Policy governance using custom policy definitions, policy initiatives, and automated remediation. Author custom policies with different effects (modify, deny, deployIfNotExists), group them into initiatives, assign with parameters, and orchestrate remediation tasks via Terraform.
+
+### Key Learning Outcomes
+- Create custom Azure Policy definitions using Policy as Code patterns
+- Implement different policy effects: modify, deny, and deployIfNotExists
+- Design and deploy policy initiatives (policy sets) for coherent governance
+- Configure automated policy remediation using Terraform
+- Apply enterprise-scale policy governance with proper RBAC
+
+### Architecture
+```mermaid
+graph TB
+    subgraph "Azure Subscription"
+        subgraph "Policy Framework"
+            PD1[Policy Definition:<br/>Require Tag<br/>Effect: modify]
+            PD2[Policy Definition:<br/>Disk Encryption<br/>Effect: deny]
+            PD3[Policy Definition:<br/>Deploy AMA<br/>Effect: deployIfNotExists]
+            
+            PI[Policy Initiative:<br/>Enterprise Governance]
+            PA[Policy Assignment:<br/>Subscription Scope]
+            MI[Managed Identity:<br/>System Assigned]
+            
+            PD1 --> PI
+            PD2 --> PI
+            PD3 --> PI
+            PI --> PA
+            PA --> MI
+        end
+        
+        subgraph "Supporting Infrastructure"
+            LAW[Log Analytics<br/>Workspace]
+            RG[Resource Group:<br/>rg-policy-testing]
+            VM[Test VM:<br/>vm-policy-test]
+            
+            LAW -.-> PD3
+            RG --- VM
+        end
+        
+        subgraph "Remediation Tasks"
+            RT1[Tag Remediation<br/>azurerm_policy_remediation]
+            RT2[AMA Remediation<br/>azapi_resource]
+            
+            PA --> RT1
+            PA --> RT2
+        end
+        
+        MI --> LAW
+        MI --> RG
+        RT1 --> VM
+        RT2 --> VM
+    end
+```
 
 ### Prerequisites
-- Subscription Owner or Policy Contributor rights.
-- Existing Log Analytics workspace id (for agent deployment example) or create as part of lab.
+- **Azure Permissions**: Owner or Policy Contributor role on subscription
+- **Tools**: Azure CLI v2.50+, Terraform v1.7+, SSH key pair
+- **Azure Providers**: PolicyInsights, Authorization, Compute, Network, OperationalInsights
 
 ### Policy Set
-1. Custom policy: Require specific tags (e.g., `cost-center`). Effect: `modify` to append if missing.
-2. Custom policy: Enforce disk encryption (deny if not enabled).
-3. deployIfNotExists policy: Ensure Azure Monitor Agent installed on Linux VMs.
-4. Initiative groups the above with parameters (tag key, tag value).
+1. **Custom policy**: Require specific tags (e.g., `cost-center`). Effect: `modify` to add if missing.
+2. **Custom policy**: Enforce disk encryption. Effect: `deny` if not enabled.
+3. **deployIfNotExists policy**: Ensure Azure Monitor Agent installed on Linux VMs.
+4. **Initiative**: Groups the above with parameters (tag key, tag value, workspace ID).
 
 ### Steps
-1. Create `policies/` directory: definition JSON templates.
-2. Terraform resources:
-   - `azurerm_policy_definition` (three definitions).
-   - `azurerm_policy_set_definition` linking them.
-   - `azurerm_subscription_policy_assignment` with parameters (tag value) + `enforcement_mode = true`.
-3. Remediation: use `azurerm_policy_remediation` (if available) OR `azapi_resource` to invoke remediation for the initiative.
-4. Create a non-compliant VM (missing tag, no AMA) in test RG.
-5. Run apply; observe remediation task creation.
-6. Re-plan to confirm drift removed (tags auto-added, extension installed).
+1. **Preparation**: Run `./prepare.sh` to validate environment and setup prerequisites.
+2. **Policy Framework**: Deploy custom policy definitions, initiative, and subscription assignment.
+3. **Test Infrastructure**: Create non-compliant VM and supporting resources for testing.
+4. **Remediation**: Execute automated remediation tasks via Terraform.
+5. **Validation**: Verify compliance through Azure Portal and CLI.
 
 ### Terraform Focus
-- Template files with `file()` function for policy rule JSON.
-- Parameterization and initiative composition.
-- Remediation orchestration as code.
+- Policy as Code patterns with JSON template files
+- Policy initiative composition and parameterization
+- Automated remediation orchestration using multiple providers
+- Enterprise governance with proper RBAC implementation
 
 ### Validation
-- Policy compliance in Portal shows resources compliant post-remediation.
-- VM has required tag and AMA extension after remediation completes.
+- Policy compliance dashboard shows all resources compliant post-remediation
+- Test VM has required tag auto-added and AMA extension installed
+- Manual creation of new resources demonstrates policy enforcement
 
 ### Success Criteria
-- Initiative deployed + remediation executed without manual portal actions.
+- ✅ Custom policies deployed with different effects (modify, deny, deployIfNotExists)
+- ✅ Policy initiative created and assigned at subscription scope
+- ✅ Automated remediation executed without manual portal intervention
+- ✅ Policy enforcement demonstrated on new resource creation
+- ✅ Compliance monitoring and reporting functional in Azure Portal
+
+For detailed step-by-step instructions, see [Lab 3 README](solutions/lab3/README.md).
 
 ---
 ## Lab 4: Production-Grade GitHub Actions CI/CD Pipeline

@@ -3,42 +3,6 @@
 ## Overview
 This lab demonstrates how to deploy a production-ready Azure Landing Zone foundation using Azure Verified Modules (AVM) with multi-subscription architecture. You'll learn advanced Terraform patterns including provider aliases, module composition, and enterprise-scale governance deployment.
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Azure Tenant                             │
-│  ┌─────────────────────────────────────────────────────────┤
-│  │           Management Group Hierarchy                    │
-│  │  ┌─────────────────────────────────────────────────────┤
-│  │  │  alz (Root Management Group)                        │
-│  │  │  ├── alz-platform                                   │
-│  │  │  │   ├── alz-management                             │
-│  │  │  │   └── alz-connectivity                           │
-│  │  │  └── alz-landing-zones                              │
-│  │  │      ├── alz-online                                 │
-│  │  │      └── alz-corp                                   │
-│  └──┴──┴──────────────────────────────────────────────────┘
-│                                                             │
-│  ┌─────────────────────┐    ┌─────────────────────────────┐ │
-│  │  Management Sub     │    │   Connectivity Sub          │ │
-│  │  ┌─────────────────┐│    │  ┌─────────────────────────┐│ │
-│  │  │ Log Analytics   ││    │  │  Hub Virtual Network   ││ │
-│  │  │ Workspace       ││    │  │  ┌─────────────────────┐││ │
-│  │  │                 ││    │  │  │  Azure Firewall     │││ │
-│  │  │ Data Collection ││    │  │  │                     │││ │
-│  │  │ Rules          ││    │  │  │  Public IP          │││ │
-│  │  │                 ││    │  │  └─────────────────────┘││ │
-│  │  │ User-Assigned   ││    │  │                         ││ │
-│  │  │ Managed Identity││    │  │  Subnets:               ││ │
-│  │  │                 ││    │  │  - AzureFirewallSubnet  ││ │
-│  │  │ Monitoring      ││    │  │  - User Subnets        ││ │
-│  │  │ Solutions       ││    │  │                         ││ │
-│  │  └─────────────────┘│    │  └─────────────────────────┘│ │
-│  └─────────────────────┘    └─────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-```
-
 ## Prerequisites
 
 ### Required Permissions

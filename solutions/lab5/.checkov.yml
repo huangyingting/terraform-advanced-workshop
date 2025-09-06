@@ -1,0 +1,43 @@
+---
+# Configuration for Checkov security scanning
+framework:
+  - terraform
+  - terraform_plan
+
+# Output format
+output: cli
+
+# Quiet mode - only output failed checks
+quiet: false
+
+# Download external modules
+download-external-modules: true
+
+# Skip checks (add check IDs to skip specific security rules)
+skip-check:
+  # Skip overly restrictive checks for lab environment
+  - CKV_AZURE_13  # App Service authentication
+  - CKV_AZURE_17  # App Service client certificates
+  - CKV_AZURE_18  # App Service HTTP2
+  - CKV2_AZURE_16 # App Service backup
+
+# Include only high and medium severity issues
+check:
+  - HIGH
+  - MEDIUM
+
+# Baseline file for suppressing known issues
+# baseline: .checkov.baseline
+
+# Custom policies directory (if you have custom policies)
+# external-checks-dir: ./custom-policies
+
+# Compact output format
+compact: true
+
+# Show progress bar
+no-guide: false
+
+# Create JUnit XML report
+# output-file-path: reports/checkov-report.xml
+# output-format: junitxml

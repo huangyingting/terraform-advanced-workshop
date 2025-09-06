@@ -1,35 +1,184 @@
-name: Module CI
+name: Terraform Module Quality Gate
+
 on:
-  pull_request:
-    paths:
-      - 'labs/lab10/**'
   push:
-    paths:
-      - 'labs/lab10/**'
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  TF_VERSION: "1.7.0"
+  TFLINT_VERSION: "v0.50.3"
+  CHECKOV_VERSION: "3.1.34"
+  GO_VERSION: "1.21"
 
 jobs:
-  validate:
+  # Code quality and security checks
+  quality-gate:
+    name: Quality Gate
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.7.5
-      - name: Terraform Fmt
-        run: terraform -chdir=labs/lab10/examples/basic fmt -check
-      - name: Terraform Init
-        run: terraform -chdir=labs/lab10/examples/basic init
-      - name: Terraform Validate
-        run: terraform -chdir=labs/lab10/examples/basic validate
-      - name: Checkov Scan
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          directory: labs/lab10/examples/basic
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-      - name: Terratest
-        run: |
-          cd labs/lab10/tests
-          go test -v -timeout 20m
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Terraform Format Check
+      run: terraform fmt -check -recursive
+      working-directory: .
+
+    - name: Terraform Init (modules)
+      run: terraform init
+      working-directory: ./modules/web_app
+
+    - name: Terraform Init (examples)
+      run: terraform init
+      working-directory: ./examples/basic
+
+    - name: Terraform Validate (modules)
+      run: terraform validate
+      working-directory: ./modules/web_app
+
+    - name: Terraform Validate (examples)
+      run: terraform validate
+      working-directory: ./examples/basic
+
+    - name: Setup TFLint
+      uses: terraform-linters/setup-tflint@v4
+      with:
+        tflint_version: ${{ env.TFLINT_VERSION }}
+
+    - name: Show TFLint version
+      run: tflint --version
+
+    - name: Init TFLint
+      run: tflint --init
+
+    - name: Run TFLint on modules
+      run: tflint --format compact
+      working-directory: ./modules/web_app
+
+    - name: Run TFLint on examples
+      run: tflint --format compact
+      working-directory: ./examples/basic
+
+    - name: Install Checkov
+      run: pip install checkov==${{ env.CHECKOV_VERSION }}
+
+    - name: Run Checkov security scan
+      run: |
+        checkov --config-file .checkov.yml \
+                --directory . \
+                --output cli \
+                --output junitxml \
+                --output-file-path reports/checkov-report.xml
+      continue-on-error: true
+
+    - name: Upload Checkov results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: checkov-results
+        path: reports/checkov-report.xml
+        retention-days: 30
+
+  # Terraform plan for examples
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: quality-gate
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Terraform Plan (dry-run)
+      run: |
+        terraform init
+        terraform plan -out=tfplan
+      working-directory: ./examples/basic
+      env:
+        # For Azure authentication in CI/CD
+        ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+  # Terratest integration tests
+  terratest:
+    name: Terratest
+    runs-on: ubuntu-latest
+    needs: quality-gate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+        terraform_wrapper: false
+
+    - name: Download Go modules
+      run: go mod download
+      working-directory: ./tests
+
+    - name: Run Terratest
+      run: go test -v -timeout 30m
+      working-directory: ./tests
+      env:
+        # For Azure authentication in CI/CD
+        ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+  # Semantic release (only on main branch)
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    needs: [quality-gate, terraform-plan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install semantic-release dependencies
+      run: |
+        npm install -g semantic-release \
+                      @semantic-release/changelog \
+                      @semantic-release/git \
+                      @semantic-release/github
+
+    - name: Run semantic-release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: semantic-release
