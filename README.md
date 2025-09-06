@@ -198,17 +198,18 @@ graph TB
         end
     end
     
+      subgraph "Microsoft Entra ID"
+         AR[App Registration:<br/>github-actions-terraform]
+         FC1[Federated Credentials:<br/>repo-branch-main]
+         FC2[Federated Credentials:<br/>repo-pull-request]
+         SP[Service Principal:<br/>Contributor role]
+         
+         AR --- FC1
+         AR --- FC2
+         AR --- SP
+      end
+
     subgraph "Azure Environment"
-        subgraph "Microsoft Entra ID"
-            AR[App Registration:<br/>github-actions-terraform]
-            FC1[Federated Credentials:<br/>repo-branch-main]
-            FC2[Federated Credentials:<br/>repo-pull-request]
-            SP[Service Principal:<br/>Contributor role]
-            
-            AR --- FC1
-            AR --- FC2
-            AR --- SP
-        end
         
         subgraph "Azure Subscription"
             subgraph "Staging Environment"
