@@ -180,7 +180,7 @@ After completing this lab, you will have learned:
 - ✅ **State File Organization**: Managing multiple state files for different architectural layers
 - ✅ **Enterprise Patterns**: Implementing production-ready Terraform state management practices
 
-## Thoughtful Questions
+## Questions
 
 Consider these questions as you reflect on this lab:
 
