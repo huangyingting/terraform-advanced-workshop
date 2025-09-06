@@ -1,0 +1,47 @@
+# Terraform files
+*.tfplan
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Backend configuration (will be copied during deployment)
+backend.tf
+
+# Environment files
+.env
+.env.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Backup files
+*.backup
+
+# SSH keys (if generated locally)
+*.pem
+*.key
+
+# Plan output files
+plan_output.txt
+plan_summary_*.md
+*_outputs.json

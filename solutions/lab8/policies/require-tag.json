@@ -1,0 +1,11 @@
+{
+  "mode": "Indexed",
+  "policyRule": {
+    "if": {"field": "tags[${tagName}]", "exists": "false"},
+    "then": {"effect": "modify", "details": {"operations": [{"operation": "addOrReplace", "field": "tags[${tagName}]", "value": "${tagValue}"}]}}
+  },
+  "parameters": {
+    "tagName": {"type": "String"},
+    "tagValue": {"type": "String"}
+  }
+}

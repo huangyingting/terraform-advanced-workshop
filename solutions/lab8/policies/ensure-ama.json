@@ -1,0 +1,36 @@
+{
+  "mode": "Indexed",
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {"field": "type", "equals": "Microsoft.Compute/virtualMachines"},
+        {"not": {"field": "extensions[?name=='AzureMonitorLinuxAgent']", "exists": "true"}}
+      ]
+    },
+    "then": {
+      "effect": "deployIfNotExists",
+      "details": {
+        "type": "Microsoft.Compute/virtualMachines/extensions",
+        "name": "AzureMonitorLinuxAgent",
+        "roleDefinitionIds": [
+          "/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"
+        ],
+        "existenceCondition": {
+          "field": "Microsoft.Compute/virtualMachines/extensions/name",
+          "equals": "AzureMonitorLinuxAgent"
+        },
+        "deployment": {
+          "properties": {
+            "mode": "incremental",
+            "template": {
+              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+              "contentVersion": "1.0.0.0",
+              "resources": []
+            }
+          }
+        }
+      }
+    }
+  },
+  "parameters": {}
+}
