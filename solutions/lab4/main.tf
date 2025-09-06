@@ -1,0 +1,235 @@
+# Random suffix for unique resource naming
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
+# Resource Group
+resource "azurerm_resource_group" "main" {
+  name     = "rg-${var.project_name}-${var.environment}"
+  location = var.location
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+  })
+}
+
+# Storage Account for application data (not Terraform state)
+resource "azurerm_storage_account" "app_storage" {
+  name                     = "st${var.project_name}${var.environment}${random_id.suffix.hex}"
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
+  account_tier             = "Standard"
+  account_replication_type = var.environment == "production" ? "GRS" : "LRS"
+
+  # Security settings
+  allow_nested_items_to_be_public = false
+  shared_access_key_enabled       = false
+  min_tls_version                 = "TLS1_2"
+
+  blob_properties {
+    versioning_enabled       = true
+    last_access_time_enabled = true
+
+    delete_retention_policy {
+      days = var.backup_retention_days
+    }
+
+    container_delete_retention_policy {
+      days = var.backup_retention_days
+    }
+  }
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+    Purpose     = "application-storage"
+  })
+}
+
+# Virtual Network
+resource "azurerm_virtual_network" "main" {
+  name                = "vnet-${var.project_name}-${var.environment}"
+  address_space       = var.environment == "production" ? ["10.1.0.0/16"] : ["10.0.0.0/16"]
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+    Purpose     = "main-network"
+  })
+}
+
+# Subnet for application resources
+resource "azurerm_subnet" "app" {
+  name                 = "subnet-app"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = var.environment == "production" ? ["10.1.1.0/24"] : ["10.0.1.0/24"]
+}
+
+# Network Security Group
+resource "azurerm_network_security_group" "app" {
+  name                = "nsg-${var.project_name}-${var.environment}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+
+  # SSH access
+  security_rule {
+    name                       = "SSH"
+    priority                   = 1001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefixes    = var.allowed_ssh_ips
+    destination_address_prefix = "*"
+  }
+
+  # HTTP access (for testing)
+  security_rule {
+    name                       = "HTTP"
+    priority                   = 1002
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  # HTTPS access
+  security_rule {
+    name                       = "HTTPS"
+    priority                   = 1003
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+    Purpose     = "network-security"
+  })
+}
+
+# Associate NSG with subnet
+resource "azurerm_subnet_network_security_group_association" "app" {
+  subnet_id                 = azurerm_subnet.app.id
+  network_security_group_id = azurerm_network_security_group.app.id
+}
+
+# Public IP for the VM
+resource "azurerm_public_ip" "vm" {
+  name                = "pip-vm-${var.project_name}-${var.environment}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+    Purpose     = "vm-public-access"
+  })
+}
+
+# Network Interface for VM
+resource "azurerm_network_interface" "vm" {
+  name                = "nic-vm-${var.project_name}-${var.environment}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.app.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.vm.id
+  }
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+    Purpose     = "vm-network-interface"
+  })
+}
+
+# Generate SSH key for VM access (if local key doesn't exist)
+resource "tls_private_key" "vm" {
+  count     = fileexists("~/.ssh/id_rsa.pub") ? 0 : 1
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "azurerm_ssh_public_key" "vm" {
+  name                = "ssh-key-vm-${var.project_name}-${var.environment}"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  public_key          = fileexists("~/.ssh/id_rsa.pub") ? file("~/.ssh/id_rsa.pub") : tls_private_key.vm[0].public_key_openssh
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+    Purpose     = "vm-ssh-access"
+  })
+}
+
+# Linux Virtual Machine
+resource "azurerm_linux_virtual_machine" "app" {
+  name                = "vm-${var.project_name}-${var.environment}-001"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  size                = var.vm_size
+  admin_username      = var.admin_username
+
+  disable_password_authentication = true
+
+  network_interface_ids = [
+    azurerm_network_interface.vm.id,
+  ]
+
+  admin_ssh_key {
+    username   = var.admin_username
+    public_key = fileexists("~/.ssh/id_rsa.pub") ? file("~/.ssh/id_rsa.pub") : tls_private_key.vm[0].public_key_openssh
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = var.environment == "production" ? "Premium_LRS" : "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+
+  # Custom data script for initial setup
+  custom_data = base64encode(templatefile("${path.module}/scripts/cloud-init.yml", {
+    environment = var.environment
+    hostname    = "vm-${var.project_name}-${var.environment}-001"
+  }))
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+    Purpose     = "application-server"
+    Tier        = "web"
+  })
+}
+
+# Log Analytics Workspace (if monitoring enabled)
+resource "azurerm_log_analytics_workspace" "main" {
+  count               = var.enable_monitoring ? 1 : 0
+  name                = "law-${var.project_name}-${var.environment}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  sku                 = "PerGB2018"
+  retention_in_days   = var.environment == "production" ? 90 : 30
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+    Purpose     = "monitoring"
+  })
+}
