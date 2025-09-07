@@ -1,40 +1,21 @@
 {
-  "mode": "Indexed",
-  "policyRule": {
-    "if": {
-      "field": "tags[parameters('tagName')]",
-      "exists": "false"
-    },
-    "then": {
-      "effect": "modify",
-      "details": {
-        "roleDefinitionIds": [
-          "/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"
-        ],
-        "operations": [
-          {
-            "operation": "addOrReplace",
-            "field": "tags[parameters('tagName')]",
-            "value": "[parameters('tagValue')]"
-          }
-        ]
-      }
-    }
+  "if": {
+    "field": "[concat('tags[', parameters('tagName'), ']')]",
+    "exists": "false"
   },
-  "parameters": {
-    "tagName": {
-      "type": "String",
-      "metadata": {
-        "displayName": "Tag Name",
-        "description": "Name of the tag to require"
-      }
-    },
-    "tagValue": {
-      "type": "String",
-      "metadata": {
-        "displayName": "Tag Value",
-        "description": "Value to assign to the tag if missing"
-      }
+  "then": {
+    "effect": "modify",
+    "details": {
+      "roleDefinitionIds": [
+        "/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"
+      ],
+      "operations": [
+        {
+          "operation": "addOrReplace",
+          "field": "[concat('tags[', parameters('tagName'), ']')]",
+          "value": "[parameters('tagValue')]"
+        }
+      ]
     }
   }
 }

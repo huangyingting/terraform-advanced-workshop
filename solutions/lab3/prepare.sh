@@ -63,18 +63,34 @@ check_azure_auth() {
 # Function to check required permissions
 check_permissions() {
     print_status "Checking required permissions..."
-    
-    # Check for Policy Contributor role
-    POLICY_ROLE=$(az role assignment list --assignee $(az account show --query user.name -o tsv) --query "[?roleDefinitionName=='Policy Contributor']" -o tsv)
-    OWNER_ROLE=$(az role assignment list --assignee $(az account show --query user.name -o tsv) --query "[?roleDefinitionName=='Owner']" -o tsv)
-    
-    if [ -z "$POLICY_ROLE" ] && [ -z "$OWNER_ROLE" ]; then
-        print_error "You need either 'Policy Contributor' or 'Owner' role to deploy policies."
-        print_error "Please ask your subscription administrator to grant the required permissions."
+
+    # Retrieve signed-in user's object ID (Graph)
+    if ! USER_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null); then
+        print_error "Unable to retrieve signed-in user object id. Ensure you have consented to required Graph permissions."
+        print_error "If this persists, try: az login --scope https://graph.microsoft.com//.default"
         exit 1
     fi
-    
-    print_success "Required permissions verified"
+
+    echo "User Object Id: $USER_OBJECT_ID"
+
+    # Show all role assignments for visibility
+    print_status "Listing role assignments for this user (scope may include management groups / subscriptions):"
+    az role assignment list --assignee "$USER_OBJECT_ID" -o table || {
+        print_error "Failed to list role assignments."
+        exit 1
+    }
+
+    # Check for required roles
+    POLICY_ROLE=$(az role assignment list --assignee "$USER_OBJECT_ID" --query "[?roleDefinitionName=='Policy Contributor']" -o tsv)
+    OWNER_ROLE=$(az role assignment list --assignee "$USER_OBJECT_ID" --query "[?roleDefinitionName=='Owner']" -o tsv)
+
+    if [ -z "$POLICY_ROLE" ] && [ -z "$OWNER_ROLE" ]; then
+        print_error "Missing required role. Need either 'Policy Contributor' or 'Owner' at subscription (or higher) scope."
+        print_error "Ask your administrator to assign one of these roles, then re-run this script."
+        exit 1
+    fi
+
+    print_success "Required permissions verified (Owner or Policy Contributor present)."
 }
 
 # Function to check Terraform installation
@@ -118,23 +134,22 @@ register_providers() {
 }
 
 # Function to check SSH key
-check_ssh_key() {
-    print_status "Checking SSH key for VM access..."
-    
-    SSH_KEY_PATH="$HOME/.ssh/id_rsa.pub"
-    
-    if [ ! -f "$SSH_KEY_PATH" ]; then
-        print_warning "SSH public key not found at $SSH_KEY_PATH"
-        print_status "Generating SSH key pair..."
-        
-        ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -N "" -C "azure-policy-lab"
-        print_success "SSH key pair generated"
+# Removed SSH key check: Lab now uses username/password authentication.
+
+generate_password() {
+    # Generates a 20-char password with upper, lower, digits, symbols meeting Azure complexity
+    tr -dc 'A-Za-z0-9@#%^&*_+=' < /dev/urandom | head -c 20
+}
+
+ensure_admin_password() {
+    if [ -z "$TF_VAR_vm_admin_password" ]; then
+        print_status "No vm_admin_password provided; generating a random secure password (store it safely)."
+        export TF_VAR_vm_admin_password=$(generate_password)
+        echo "Generated VM admin password: $TF_VAR_vm_admin_password"
+        print_warning "Record this password; it will not be retrievable later. Consider rotating after lab."
     else
-        print_success "SSH public key found at $SSH_KEY_PATH"
+        print_success "Using provided vm_admin_password environment variable."
     fi
-    
-    # Export for Terraform
-    export TF_VAR_ssh_public_key_path="$SSH_KEY_PATH"
 }
 
 # Function to set environment variables
@@ -191,12 +206,12 @@ create_tfvars() {
         
         cat > terraform.tfvars << EOF
 # Lab 3: Policy as Code Configuration
-location                   = "$TF_VAR_location"
-resource_group_name       = "rg-policy-testing"
-tag_name                  = "cost-center"
-tag_value                 = "demo"
-vm_admin_username         = "azureuser"
-ssh_public_key_path       = "$HOME/.ssh/id_rsa.pub"
+location              = "$TF_VAR_location"
+resource_group_name   = "lab3-rg"
+tag_name              = "cost-center"
+tag_value             = "lab3"
+vm_admin_username     = "azureuser"
+vm_admin_password     = "${TF_VAR_vm_admin_password:-ChangeM3!}" # generated or placeholder; rotate if placeholder
 EOF
         
         print_success "Created terraform.tfvars with default values"
@@ -246,7 +261,7 @@ main() {
     check_permissions
     check_terraform
     register_providers
-    check_ssh_key
+    ensure_admin_password
     set_environment_variables
     validate_policy_files
     create_tfvars

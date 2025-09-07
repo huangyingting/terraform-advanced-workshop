@@ -8,7 +8,7 @@ variable "location" {
 variable "resource_group_name" {
   description = "Name of the resource group for testing policy compliance"
   type        = string
-  default     = "rg-policy-testing"
+  default     = "lab3-rg"
 }
 
 variable "tag_name" {
@@ -25,7 +25,7 @@ variable "tag_name" {
 variable "tag_value" {
   description = "The value for the required tag"
   type        = string
-  default     = "demo"
+  default     = "lab3"
   
   validation {
     condition     = length(var.tag_value) > 0
@@ -45,8 +45,12 @@ variable "vm_admin_username" {
   default     = "azureuser"
 }
 
-variable "ssh_public_key_path" {
-  description = "Path to the SSH public key file for VM access"
+variable "vm_admin_password" {
+  description = "Admin password for the test VM (must meet Azure complexity requirements)"
   type        = string
-  default     = "~/.ssh/id_rsa.pub"
+  sensitive   = true
+  validation {
+    condition     = length(var.vm_admin_password) >= 12
+    error_message = "Admin password must be at least 12 characters long."
+  }
 }

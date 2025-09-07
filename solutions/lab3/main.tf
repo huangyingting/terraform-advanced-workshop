@@ -6,12 +6,12 @@ data "azurerm_client_config" "current" {}
 # Create Log Analytics Workspace if not provided
 resource "azurerm_resource_group" "logs" {
   count    = var.log_analytics_workspace_id == null ? 1 : 0
-  name     = "rg-policy-logs"
+  name     = "lab3-policy-logs-rg"
   location = var.location
 
   tags = {
-    Environment = "Lab"
-    Purpose     = "Policy Governance Demo"
+    Environment = "lab3"
+    Purpose     = "policy governance"
   }
 }
 
@@ -24,8 +24,8 @@ resource "azurerm_log_analytics_workspace" "policy_logs" {
   retention_in_days   = 30
 
   tags = {
-    Environment = "Lab"
-    Purpose     = "Policy Governance Demo"
+    Environment = "lab3"
+    Purpose     = "policy governance"
   }
 }
 
@@ -40,13 +40,13 @@ resource "azurerm_policy_definition" "require_tag" {
   description  = "This policy requires resources to have the ${var.tag_name} tag. If the tag is missing, it will be added with the specified value using the modify effect."
   policy_type  = "Custom"
   mode         = "Indexed"
-  metadata     = jsonencode({
+  metadata = jsonencode({
     category = "Tags"
     version  = "1.0.0"
   })
 
   policy_rule = file("${path.module}/policies/require-tag.json")
-  
+
   parameters = jsonencode({
     tagName = {
       type = "String"
@@ -71,7 +71,7 @@ resource "azurerm_policy_definition" "require_disk_encryption" {
   description  = "This policy denies creation of virtual machines that do not have disk encryption enabled."
   policy_type  = "Custom"
   mode         = "Indexed"
-  metadata     = jsonencode({
+  metadata = jsonencode({
     category = "Security"
     version  = "1.0.0"
   })
@@ -85,13 +85,13 @@ resource "azurerm_policy_definition" "deploy_ama" {
   description  = "This policy ensures Azure Monitor Agent is installed on Linux virtual machines using deployIfNotExists effect."
   policy_type  = "Custom"
   mode         = "Indexed"
-  metadata     = jsonencode({
+  metadata = jsonencode({
     category = "Monitoring"
     version  = "1.0.0"
   })
 
   policy_rule = file("${path.module}/policies/ensure-ama.json")
-  
+
   parameters = jsonencode({
     logAnalyticsWorkspaceId = {
       type = "String"
@@ -118,7 +118,7 @@ resource "azurerm_policy_set_definition" "enterprise_governance" {
   policy_definition_reference {
     policy_definition_id = azurerm_policy_definition.require_tag.id
     reference_id         = "RequireTag"
-    
+
     parameter_values = jsonencode({
       tagName = {
         value = var.tag_name
@@ -139,7 +139,7 @@ resource "azurerm_policy_set_definition" "enterprise_governance" {
   policy_definition_reference {
     policy_definition_id = azurerm_policy_definition.deploy_ama.id
     reference_id         = "DeployAMA"
-    
+
     parameter_values = jsonencode({
       logAnalyticsWorkspaceId = {
         value = local.log_analytics_workspace_id
@@ -148,64 +148,41 @@ resource "azurerm_policy_set_definition" "enterprise_governance" {
   }
 }
 
-# Policy Assignment at Subscription Level
-resource "azurerm_subscription_policy_assignment" "enterprise_governance" {
+# Policy Assignment scoped to the policy_testing Resource Group
+resource "azurerm_resource_group_policy_assignment" "enterprise_governance" {
   name                 = "enterprise-governance-assignment"
-  display_name         = "Enterprise Governance Policy Assignment"
-  description          = "Assignment of enterprise governance policies for demonstration purposes"
-  subscription_id      = data.azurerm_subscription.current.id
+  display_name         = "Enterprise Governance Policy Assignment (RG)"
+  resource_group_id    = azurerm_resource_group.policy_testing.id
   policy_definition_id = azurerm_policy_set_definition.enterprise_governance.id
   location             = var.location
+  enforce              = true
 
-  # Enable system-assigned managed identity for remediation
-  identity {
-    type = "SystemAssigned"
-  }
-
-  # Policy assignment parameters
-  parameters = jsonencode({
-    tagName = {
-      value = var.tag_name
-    }
-    tagValue = {
-      value = var.tag_value
-    }
-    logAnalyticsWorkspaceId = {
-      value = local.log_analytics_workspace_id
-    }
-  })
-
-  # Enable enforcement (true by default, but explicit for clarity)
-  enforce = true
-
-  # Exclude certain resource groups from policy evaluation
-  not_scopes = [
-    "/subscriptions/${data.azurerm_subscription.current.subscription_id}/resourceGroups/cloud-shell-storage-*"
-  ]
+  identity { type = "SystemAssigned" }
 
   depends_on = [
-    azurerm_policy_set_definition.enterprise_governance
+    azurerm_policy_set_definition.enterprise_governance,
+    azurerm_resource_group.policy_testing
   ]
 }
 
 # Role Assignment for Policy Remediation
 resource "azurerm_role_assignment" "policy_remediation_contributor" {
-  scope                = data.azurerm_subscription.current.id
+  scope                = azurerm_resource_group.policy_testing.id
   role_definition_name = "Contributor"
-  principal_id         = azurerm_subscription_policy_assignment.enterprise_governance.identity[0].principal_id
+  principal_id         = azurerm_resource_group_policy_assignment.enterprise_governance.identity[0].principal_id
 
   depends_on = [
-    azurerm_subscription_policy_assignment.enterprise_governance
+    azurerm_resource_group_policy_assignment.enterprise_governance
   ]
 }
 
 resource "azurerm_role_assignment" "policy_remediation_vm_contributor" {
-  scope                = data.azurerm_subscription.current.id
+  scope                = azurerm_resource_group.policy_testing.id
   role_definition_name = "Virtual Machine Contributor"
-  principal_id         = azurerm_subscription_policy_assignment.enterprise_governance.identity[0].principal_id
+  principal_id         = azurerm_resource_group_policy_assignment.enterprise_governance.identity[0].principal_id
 
   depends_on = [
-    azurerm_subscription_policy_assignment.enterprise_governance
+    azurerm_resource_group_policy_assignment.enterprise_governance
   ]
 }
 
@@ -216,13 +193,9 @@ resource "azurerm_resource_group" "policy_testing" {
 
   # Intentionally missing the required tag to test policy remediation
   tags = {
-    Environment = "Lab"
-    Purpose     = "Policy Testing"
+    Environment = "lab3"
+    Purpose     = "policy testing"
   }
-
-  depends_on = [
-    azurerm_subscription_policy_assignment.enterprise_governance
-  ]
 }
 
 # Virtual Network for Test VM
@@ -233,8 +206,8 @@ resource "azurerm_virtual_network" "test_vnet" {
   resource_group_name = azurerm_resource_group.policy_testing.name
 
   tags = {
-    Environment = "Lab"
-    Purpose     = "Policy Testing"
+    Environment = "lab3"
+    Purpose     = "policy testing"
   }
 }
 
@@ -264,28 +237,28 @@ resource "azurerm_network_security_group" "test_nsg" {
   }
 
   tags = {
-    Environment = "Lab"
-    Purpose     = "Policy Testing"
+    Environment = "lab3"
+    Purpose     = "policy testing"
   }
 }
 
 # Public IP for Test VM
 resource "azurerm_public_ip" "test_vm_pip" {
-  name                = "pip-test-vm"
+  name                = "pip-policy-test"
   location            = azurerm_resource_group.policy_testing.location
   resource_group_name = azurerm_resource_group.policy_testing.name
   allocation_method   = "Static"
   sku                 = "Standard"
 
   tags = {
-    Environment = "Lab"
-    Purpose     = "Policy Testing"
+    Environment = "lab3"
+    Purpose     = "policy testing"
   }
 }
 
 # Network Interface for Test VM
 resource "azurerm_network_interface" "test_vm_nic" {
-  name                = "nic-test-vm"
+  name                = "nic-policy-test"
   location            = azurerm_resource_group.policy_testing.location
   resource_group_name = azurerm_resource_group.policy_testing.name
 
@@ -297,8 +270,8 @@ resource "azurerm_network_interface" "test_vm_nic" {
   }
 
   tags = {
-    Environment = "Lab"
-    Purpose     = "Policy Testing"
+    Environment = "lab3"
+    Purpose     = "policy testing"
   }
 }
 
@@ -316,17 +289,15 @@ resource "azurerm_linux_virtual_machine" "test_vm" {
   size                = "Standard_B1s"
   admin_username      = var.vm_admin_username
 
-  # Disable password authentication
-  disable_password_authentication = true
+  # Enable password authentication (lab requirement)
+  disable_password_authentication = false
+  admin_password                  = var.vm_admin_password
 
   network_interface_ids = [
     azurerm_network_interface.test_vm_nic.id,
   ]
 
-  admin_ssh_key {
-    username   = var.vm_admin_username
-    public_key = file(var.ssh_public_key_path)
-  }
+  # SSH key block removed; using password authentication
 
   os_disk {
     caching              = "ReadWrite"
@@ -343,42 +314,24 @@ resource "azurerm_linux_virtual_machine" "test_vm" {
 
   # Intentionally missing the required tag to test policy remediation
   tags = {
-    Environment = "Lab"
-    Purpose     = "Policy Testing"
+    Environment = "lab3"
+    Purpose     = "policy testing"
   }
-
-  depends_on = [
-    azurerm_subscription_policy_assignment.enterprise_governance
-  ]
 }
 
 # Remediation Tasks
 # Remediation for tag policy
-resource "azurerm_policy_remediation" "require_tag_remediation" {
-  name                 = "remediate-missing-tags"
-  policy_assignment_id = azurerm_subscription_policy_assignment.enterprise_governance.id
-  policy_definition_reference_id = "RequireTag"
-  location_filters     = [var.location]
-
-  # Wait for the policy assignment to be fully deployed
-  depends_on = [
-    azurerm_subscription_policy_assignment.enterprise_governance,
-    azurerm_role_assignment.policy_remediation_contributor,
-    azurerm_linux_virtual_machine.test_vm
-  ]
-}
-
-# Remediation for AMA deployment (using azapi_resource for advanced scenarios)
-resource "azapi_resource" "ama_remediation" {
+# (Replaced unsupported azurerm_policy_remediation with azapi_resource)
+resource "azapi_resource" "tag_remediation" {
   type      = "Microsoft.PolicyInsights/remediations@2021-10-01"
-  name      = "remediate-ama-deployment"
-  parent_id = data.azurerm_subscription.current.id
+  name      = "remediate-missing-tags"
+  parent_id = azurerm_resource_group.policy_testing.id
 
   body = jsonencode({
     properties = {
-      policyAssignmentId = azurerm_subscription_policy_assignment.enterprise_governance.id
-      policyDefinitionReferenceId = "DeployAMA"
-      resourceDiscoveryMode = "ReEvaluateCompliance"
+      policyAssignmentId          = azurerm_resource_group_policy_assignment.enterprise_governance.id
+      policyDefinitionReferenceId = "RequireTag"
+      resourceDiscoveryMode       = "ReEvaluateCompliance"
       filters = {
         locations = [var.location]
       }
@@ -386,7 +339,31 @@ resource "azapi_resource" "ama_remediation" {
   })
 
   depends_on = [
-    azurerm_subscription_policy_assignment.enterprise_governance,
+    azurerm_resource_group_policy_assignment.enterprise_governance,
+    azurerm_role_assignment.policy_remediation_contributor,
+    azurerm_linux_virtual_machine.test_vm
+  ]
+}
+
+# Remediation for AMA deployment (unchanged)
+resource "azapi_resource" "ama_remediation" {
+  type      = "Microsoft.PolicyInsights/remediations@2021-10-01"
+  name      = "remediate-ama-deployment"
+  parent_id = azurerm_resource_group.policy_testing.id
+
+  body = jsonencode({
+    properties = {
+      policyAssignmentId          = azurerm_resource_group_policy_assignment.enterprise_governance.id
+      policyDefinitionReferenceId = "DeployAMA"
+      resourceDiscoveryMode       = "ReEvaluateCompliance"
+      filters = {
+        locations = [var.location]
+      }
+    }
+  })
+
+  depends_on = [
+    azurerm_resource_group_policy_assignment.enterprise_governance,
     azurerm_role_assignment.policy_remediation_vm_contributor,
     azurerm_linux_virtual_machine.test_vm
   ]

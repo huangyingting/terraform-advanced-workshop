@@ -189,7 +189,7 @@ graph TB
         
         subgraph "Supporting Infrastructure"
             LAW[Log Analytics<br/>Workspace]
-            RG[Resource Group:<br/>rg-policy-testing]
+            RG[Resource Group:<br/>lab3-rg]
             VM[Test VM:<br/>vm-policy-test]
             
             LAW -.-> PD3
