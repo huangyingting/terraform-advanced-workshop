@@ -54,6 +54,17 @@ check_prerequisites() {
         print_warning "APP_NAME not set, using default: ${APP_NAME}"
     fi
     
+    if ! command -v gh &> /dev/null; then
+        print_error "GitHub CLI (gh) is not installed or not in PATH"
+        print_status "Install from: https://cli.github.com/ and re-run"
+        exit 1
+    fi
+    
+    if ! gh auth status &> /dev/null; then
+        print_error "GitHub CLI not authenticated. Run: gh auth login"
+        exit 1
+    fi
+    
     print_success "Prerequisites check completed"
 }
 
@@ -163,10 +174,13 @@ create_backend_storage() {
     
     SUBSCRIPTION_ID=$(az account show --query id -o tsv)
     LOCATION="southeastasia"  # Default location
-    
+
+    # Deterministic suffix from subscription ID (first 8 chars of sha256)
+    SA_SUFFIX=$(echo -n "${SUBSCRIPTION_ID}" | sha256sum | cut -c1-8)
+
     # Create staging backend
-    STAGING_RG="rg-terraform-state-staging"
-    STAGING_SA="sttfstatelab3staging$(echo $SUBSCRIPTION_ID | tr -d '-' | head -c 8)"
+    STAGING_RG="lab4-tf-staging-rg"
+    STAGING_SA="lab4stagingsa${SA_SUFFIX}"
     
     # Create resource group for staging
     if ! az group show --name "${STAGING_RG}" &>/dev/null; then
@@ -198,9 +212,9 @@ create_backend_storage() {
         --auth-mode login &>/dev/null || true
     
     # Create production backend
-    PRODUCTION_RG="rg-terraform-state-production"
-    PRODUCTION_SA="sttfstatelab3prod$(echo $SUBSCRIPTION_ID | tr -d '-' | head -c 8)"
-    
+    PRODUCTION_RG="lab4-tf-prod-rg"
+    PRODUCTION_SA="lab4prodsa${SA_SUFFIX}"
+
     # Create resource group for production
     if ! az group show --name "${PRODUCTION_RG}" &>/dev/null; then
         az group create --name "${PRODUCTION_RG}" --location "${LOCATION}" > /dev/null
@@ -235,6 +249,44 @@ create_backend_storage() {
     export PRODUCTION_STORAGE_ACCOUNT="${PRODUCTION_SA}"
 }
 
+# New: Create GitHub environments and add secrets
+create_github_environments() {
+    print_status "Creating GitHub environments and adding secrets..."
+
+    local SUBSCRIPTION_ID TENANT_ID
+    SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+    TENANT_ID=$(az account show --query tenantId -o tsv)
+
+    create_env() {
+        local env_name="$1"
+        local rg_name="$2"
+        local sa_name="$3"
+
+        # Ensure environment exists
+        gh api --method PUT "repos/${GITHUB_REPO}/environments/${env_name}" >/dev/null 2>&1 \
+            && print_success "Ensured GitHub environment '${env_name}' exists" \
+            || print_warning "Could not explicitly create '${env_name}' (may already exist)"
+
+        set_secret() {
+            local key="$1"
+            local value="$2"
+            gh secret set "${key}" --env "${env_name}" --repo "${GITHUB_REPO}" --body "${value}" >/dev/null
+        }
+
+        set_secret AZURE_CLIENT_ID "${APP_ID}"
+        set_secret AZURE_SUBSCRIPTION_ID "${SUBSCRIPTION_ID}"
+        set_secret AZURE_TENANT_ID "${TENANT_ID}"
+        set_secret TFSTATE_CONTAINER_NAME "tfstate"
+        set_secret TFSTATE_RESOURCE_GROUP_NAME "${rg_name}"
+        set_secret TFSTATE_STORAGE_ACCOUNT_NAME "${sa_name}"
+
+        print_success "Configured secrets for environment '${env_name}'"
+    }
+
+    create_env "staging" "lab4-tf-staging-rg" "${STAGING_STORAGE_ACCOUNT}"
+    create_env "production" "lab4-tf-prod-rg" "${PRODUCTION_STORAGE_ACCOUNT}"
+}
+
 # Display final configuration
 display_configuration() {
     SUBSCRIPTION_ID=$(az account show --query id -o tsv)
@@ -253,12 +305,13 @@ display_configuration() {
     echo "Staging backend storage account: ${STAGING_STORAGE_ACCOUNT:-Not created}"
     echo "Production backend storage account: ${PRODUCTION_STORAGE_ACCOUNT:-Not created}"
     echo ""
+    print_status "=== GitHub Environments ==="
+    echo "Configured environments: staging, production (with required secrets)"
+    echo ""
     print_status "=== Next Steps ==="
-    echo "1. Add the secrets above to your GitHub repository"
-    echo "2. Create 'staging' and 'production' environments in GitHub"
-    echo "3. Configure protection rules for the production environment"
-    echo "4. Update backend configurations with the actual storage account names"
-    echo "5. Test the pipeline by creating a pull request"
+    echo "1. Reference 'staging' and 'production' environments in your GitHub Actions workflows"
+    echo "2. Protect 'production' environment (optional approvals) if needed"
+    echo "3. Run a test workflow (e.g., open a PR -> staging, merge -> production)"
     echo ""
 }
 
@@ -272,6 +325,7 @@ main() {
     configure_federated_credentials
     assign_permissions
     create_backend_storage
+    create_github_environments
     display_configuration
     
     print_success "Setup completed successfully!"

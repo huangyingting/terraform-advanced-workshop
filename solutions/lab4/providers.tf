@@ -15,8 +15,11 @@ terraform {
     }
   }
 
-  # Backend configuration will be set per environment
-  # See environments/staging/backend.tf and environments/production/backend.tf
+  backend "azurerm" {
+    use_oidc         = true
+    use_azuread_auth = true
+    key              = "lab4.tfstate"
+  }
 }
 
 provider "azurerm" {

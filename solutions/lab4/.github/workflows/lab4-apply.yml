@@ -6,8 +6,8 @@ on:
     paths:
       - '**.tf'
       - '**.tfvars'
-      - '.github/workflows/apply.yml'
-      - '.github/workflows/plan.yml'
+      - '.github/workflows/lab4-apply.yml'
+      - '.github/workflows/lab4-plan.yml'
 
 # Allow only one concurrent deployment
 concurrency:

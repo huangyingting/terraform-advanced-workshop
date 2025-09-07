@@ -17,7 +17,7 @@ variable "location" {
 variable "project_name" {
   description = "Project name used in resource naming"
   type        = string
-  default     = "terraform-cicd"
+  default     = "lab4"
 }
 
 variable "vm_size" {
@@ -42,9 +42,8 @@ variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)
   default = {
-    Environment = "lab"
-    Project     = "terraform-advanced-workshop"
-    Lab         = "lab3-cicd"
+    Environment = "development"
+    Project     = "lab4"
     ManagedBy   = "terraform"
     CreatedBy   = "github-actions"
   }

@@ -1,4 +1,4 @@
-# Lab 3: Production-Grade GitHub Actions CI/CD Pipeline
+# Lab 4: Production-Grade GitHub Actions CI/CD Pipeline
 
 ## Overview
 This lab demonstrates how to implement a production-ready CI/CD pipeline for Terraform using GitHub Actions with OpenID Connect (OIDC) authentication, automated planning on pull requests, multi-environment deployments with approval gates, and secure state management. You'll learn enterprise-grade Infrastructure as Code (IaC) practices without storing long-lived secrets in your repository.
@@ -34,7 +34,7 @@ export LOCATION="southeastasia"
 
 ## Directory Structure
 ```
-lab3/
+lab4/
 ├── README.md                    # This documentation
 ├── .github/                     # GitHub Actions workflows
 │   └── workflows/
@@ -199,7 +199,7 @@ The Terraform configuration has already been created with the following componen
      --name rg-terraform-state-staging \
      --location southeastasia
    
-   STAGING_SA="sttfstatelab3staging$(date +%s)"
+   STAGING_SA="sttfstatelab4staging$(date +%s)"
    az storage account create \
      --name "$STAGING_SA" \
      --resource-group rg-terraform-state-staging \
@@ -213,10 +213,10 @@ The Terraform configuration has already been created with the following componen
 2. **Update backend configurations:**
    ```bash
    # Update staging backend configuration
-   sed -i "s/sttfstatelab3staging/$STAGING_SA/g" environments/staging/backend.tf
+   sed -i "s/sttfstatelab4staging/$STAGING_SA/g" environments/staging/backend.tf
    
    # Update production backend configuration  
-   sed -i "s/sttfstatelab3production/$PRODUCTION_SA/g" environments/production/backend.tf
+   sed -i "s/sttfstatelab4production/$PRODUCTION_SA/g" environments/production/backend.tf
    ```
 
 ### Step 5: Test the CI/CD Pipeline
@@ -245,7 +245,7 @@ The Terraform configuration has already been created with the following componen
    git checkout -b test-cicd-pipeline
    
    # Make a small change (e.g., update a tag)
-   sed -i 's/Lab          = "lab3-cicd"/Lab          = "lab3-cicd-test"/' staging.tfvars
+   sed -i 's/Lab          = "lab4-cicd"/Lab          = "lab4-cicd-test"/' staging.tfvars
    
    # Commit and push
    git add staging.tfvars
@@ -280,7 +280,7 @@ The Terraform configuration has already been created with the following componen
 terraform {
   backend "azurerm" {
     resource_group_name  = "rg-terraform-state-staging"
-    storage_account_name = "sttfstatelab3staging"
+    storage_account_name = "sttfstatelab4staging"
     container_name       = "tfstate"
     key                  = "staging.tfstate"
   }
@@ -395,13 +395,13 @@ deploy-production:
    ```bash
    # Check staging state
    az storage blob list \
-     --account-name sttfstatelab3staging \
+     --account-name sttfstatelab4staging \
      --container-name tfstate \
      --output table
    
    # Check production state
    az storage blob list \
-     --account-name sttfstatelab3production \
+     --account-name sttfstatelab4production \
      --container-name tfstate \
      --output table
    ```
@@ -450,10 +450,10 @@ az role assignment list --assignee $AZURE_CLIENT_ID
 **Solution**:
 ```bash
 # Verify storage account exists
-az storage account show --name sttfstatelab3staging --resource-group rg-terraform-state-staging
+az storage account show --name sttfstatelab4staging --resource-group rg-terraform-state-staging
 
 # Check container exists
-az storage container show --name tfstate --account-name sttfstatelab3staging
+az storage container show --name tfstate --account-name sttfstatelab4staging
 
 # Verify permissions
 az role assignment list --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/rg-terraform-state-staging"
@@ -614,42 +614,3 @@ After completing this lab, you'll have mastered:
 - [Azure Backend Configuration](https://www.terraform.io/docs/language/backend/azurerm.html)
 - [GitHub Environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
 - [Terraform Best Practices](https://www.terraform.io/docs/cloud/guides/recommended-practices/index.html)
-   echo "AZURE_CLIENT_ID: $APP_ID"
-   echo "AZURE_TENANT_ID: $(az account show --query tenantId -o tsv)"
-   echo "AZURE_SUBSCRIPTION_ID: $AZURE_SUBSCRIPTION_ID"
-   ```
-
-### Step 2: Configure GitHub Repository
-
-1. **Set up GitHub Secrets:**
-   Navigate to your repository → Settings → Secrets and variables → Actions
-
-   Add the following repository secrets:
-   - `AZURE_CLIENT_ID`: The Application ID from Step 1
-   - `AZURE_TENANT_ID`: Your Azure tenant ID
-   - `AZURE_SUBSCRIPTION_ID`: Your Azure subscription ID
-
-2. **Create GitHub Environments:**
-   Navigate to Settings → Environments and create:
-   
-   **Staging Environment:**
-   - Name: `staging`
-   - Deployment branches: Selected branches → `main`
-   - No protection rules (automatic deployment)
-
-   **Production Environment:**
-   - Name: `production`
-   - Deployment branches: Selected branches → `main`
-   - Protection rules:
-     - ✅ Required reviewers (add yourself or team members)
-     - ✅ Wait timer: 5 minutes (optional)
-     - ✅ Prevent administrators from bypassing protection rules
-
-### Step 3: Create Terraform Infrastructure Configuration
-
-1. **Create the main Terraform configuration:**
-   ```bash
-   cd solutions/lab3
-   ```
-
-2. **Update providers.tf:**
