@@ -40,10 +40,8 @@ Outputs include: Client ID, Tenant ID, Subscription ID, storage account names, e
 Immediately after running `./prepare.sh`, configure repository governance so workflows enforce proper review & approval:
 
 1. Protect the `main` branch (Settings → Branches → Add rule):
-	* Require pull request before merging
-	* Require status checks to pass (select the plan workflow name: "Lab 4 Terraform Plan (PR)")
-	* Dismiss stale approvals (optional but recommended)
-	* Restrict who can push directly (no direct pushes; admins can bypass only if absolutely necessary)
+	* Require a pull request before merging → Require approvals
+	* Dismiss stale pull request approvals when new commits are pushed (optional but recommended)
 2. Configure Environment protection:
 	* Go to Settings → Environments → `staging` → Require reviewers → add at least one team/user
 	* Repeat for `production` (typically stricter: 2 reviewers or a specific ops/security group)
