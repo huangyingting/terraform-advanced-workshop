@@ -1,4 +1,4 @@
-name: "Lab4 Terraform Destroy"
+name: "Lab 4 Terraform Destroy"
 
 on:
   workflow_dispatch:
