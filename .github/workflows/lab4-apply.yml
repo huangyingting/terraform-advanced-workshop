@@ -1,4 +1,4 @@
-name: "Terraform Deploy"
+name: "Lab 4 Terraform Deploy"
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
       - ".github/workflows/lab4-plan.yml"
   workflow_dispatch: {}
 
-# Allow only one concurrent deployment
+
 concurrency:
   group: terraform-deploy
   cancel-in-progress: false
@@ -47,13 +47,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # - name: Azure Login via OIDC
-      #   uses: azure/login@v1
-      #   with:
-      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -116,8 +109,8 @@ jobs:
           fi
           set -e
 
-      - name: Pull Remote State
-        run: terraform state pull > lab4.tfstate
+      - name: Pull Final State (Post-Apply)
+        run: terraform state pull > post-apply-staging.tfstate || echo "{}" > post-apply-staging.tfstate
 
       - name: Upload Deployment Artifacts
         uses: actions/upload-artifact@v4
@@ -126,7 +119,7 @@ jobs:
           name: staging-deployment
           path: |
             solutions/lab4/staging_outputs.json
-            solutions/lab4/lab4.tfstate
+            solutions/lab4/post-apply-staging.tfstate
           retention-days: 30
 
       - name: Test Staging Deployment
@@ -167,13 +160,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # - name: Azure Login via OIDC
-      #   uses: azure/login@v1
-      #   with:
-      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -213,29 +199,29 @@ jobs:
       - name: Terraform Output
         id: output
         run: |
-            set +e
-            terraform output -json > production_outputs.json 2>/dev/null
-            if [ $? -ne 0 ]; then
-              echo "{}" > production_outputs.json
-              echo "No Terraform outputs available."
+          set +e
+          terraform output -json > production_outputs.json 2>/dev/null
+          if [ $? -ne 0 ]; then
+            echo "{}" > production_outputs.json
+            echo "No Terraform outputs available."
+          fi
+          if terraform output -json resource_summary >/dev/null 2>&1; then
+            echo "summary=$(terraform output -json resource_summary | jq -c .)" >> $GITHUB_OUTPUT
+          else
+            echo "summary={}" >> $GITHUB_OUTPUT
+          fi
+          if [ "${{ steps.plan.outputs.plan_exit_code }}" = "2" ]; then
+            if terraform output -raw vm_public_ip >/dev/null 2>&1; then
+              echo "VM Public IP: $(terraform output -raw vm_public_ip)"
             fi
-            if terraform output -json resource_summary >/dev/null 2>&1; then
-              echo "summary=$(terraform output -json resource_summary | jq -c .)" >> $GITHUB_OUTPUT
-            else
-              echo "summary={}" >> $GITHUB_OUTPUT
+            if terraform output -raw ssh_connection_command >/dev/null 2>&1; then
+              echo "SSH Command: $(terraform output -raw ssh_connection_command)"
             fi
-            if [ "${{ steps.plan.outputs.plan_exit_code }}" = "2" ]; then
-              if terraform output -raw vm_public_ip >/dev/null 2>&1; then
-                echo "VM Public IP: $(terraform output -raw vm_public_ip)"
-              fi
-              if terraform output -raw ssh_connection_command >/dev/null 2>&1; then
-                echo "SSH Command: $(terraform output -raw ssh_connection_command)"
-              fi
-            fi
-            set -e
+          fi
+          set -e
 
-      - name: Pull Remote State
-        run: terraform state pull > lab4.tfstate
+      - name: Pull Final State (Post-Apply)
+        run: terraform state pull > post-apply-production.tfstate || echo "{}" > post-apply-production.tfstate
 
       - name: Upload Deployment Artifacts
         uses: actions/upload-artifact@v4
@@ -244,7 +230,7 @@ jobs:
           name: production-deployment
           path: |
             solutions/lab4/production_outputs.json
-            solutions/lab4/lab4.tfstate
+            solutions/lab4/post-apply-production.tfstate
           retention-days: 90
 
       - name: Test Production Deployment

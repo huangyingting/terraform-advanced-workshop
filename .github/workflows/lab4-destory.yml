@@ -87,11 +87,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-            name: staging-destroy
-            path: |
-              solutions/lab4/staging-destroy.tfplan
-              solutions/lab4/post-destroy-staging.tfstate
-            retention-days: 7
+          name: staging-destroy
+          path: |
+            solutions/lab4/staging-destroy.tfplan
+            solutions/lab4/post-destroy-staging.tfstate
+          retention-days: 7
 
   destroy-production:
     name: "Destroy Production"
