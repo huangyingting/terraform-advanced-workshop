@@ -400,7 +400,7 @@ main() {
     configure_federated_credentials
     assign_permissions
     create_backend_storage
-    assign_storage_blob_roles   # Added call
+    assign_storage_blob_roles
     create_github_environments
     display_configuration
     
