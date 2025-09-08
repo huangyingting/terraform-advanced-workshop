@@ -141,6 +141,27 @@ configure_federated_credentials() {
     else
         print_warning "Federated credential for pull requests already exists"
     fi
+    
+    # Environment-specific federated credentials (staging, production)
+    for env in staging production; do
+        CRED_NAME="github-env-${env}"
+        EXISTING_ENV_CRED=$(az ad app federated-credential list --id "${APP_ID}" \
+            --query "[?name=='${CRED_NAME}'].name | [0]" -o tsv 2>/dev/null || echo "")
+        if [[ -z "${EXISTING_ENV_CRED}" || "${EXISTING_ENV_CRED}" == "null" ]]; then
+            az ad app federated-credential create \
+                --id "${APP_ID}" \
+                --parameters '{
+                    "name": "'${CRED_NAME}'",
+                    "issuer": "https://token.actions.githubusercontent.com",
+                    "subject": "repo:'"${GITHUB_REPO}"':environment:'"${env}"'",
+                    "description": "GitHub Actions environment '"${env}"' deployments",
+                    "audiences": ["api://AzureADTokenExchange"]
+                }' > /dev/null
+            print_success "Created federated credential for environment: ${env}"
+        else
+            print_warning "Federated credential for environment '${env}' already exists"
+        fi
+    done
 }
 
 # Assign Azure RBAC permissions
