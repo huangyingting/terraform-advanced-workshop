@@ -46,17 +46,6 @@ output "ssh_connection_command" {
   value       = "ssh ${var.admin_username}@${azurerm_public_ip.vm.ip_address}"
 }
 
-# Storage outputs
-output "storage_account_name" {
-  description = "Name of the storage account"
-  value       = azurerm_storage_account.app_storage.name
-}
-
-output "storage_account_primary_endpoint" {
-  description = "Primary blob endpoint of the storage account"
-  value       = azurerm_storage_account.app_storage.primary_blob_endpoint
-}
-
 # Environment information
 output "environment" {
   description = "Environment name"
@@ -94,7 +83,6 @@ output "resource_summary" {
     subnets                  = 1
     network_security_groups  = 1
     virtual_machines         = 1
-    storage_accounts         = 1
     public_ips               = 1
     network_interfaces       = 1
     log_analytics_workspaces = var.enable_monitoring ? 1 : 0
