@@ -48,12 +48,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login via OIDC
-        uses: azure/login@v1
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # - name: Azure Login via OIDC
+      #   uses: azure/login@v1
+      #   with:
+      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -132,6 +132,10 @@ jobs:
     environment: production
     if: needs.deploy-staging.outputs.deployment-status == 'success'
 
+    defaults:
+      run:
+        working-directory: solutions/lab4
+
     env:
       ARM_USE_OIDC: true
       ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -142,12 +146,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login via OIDC
-        uses: azure/login@v1
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # - name: Azure Login via OIDC
+      #   uses: azure/login@v1
+      #   with:
+      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
