@@ -5,7 +5,7 @@ resource "random_id" "suffix" {
 
 # Resource Group
 resource "azurerm_resource_group" "main" {
-  name     = "rg-${var.project_name}-${var.environment}"
+  name     = "${var.project_name}-${var.environment}-rg"
   location = var.location
 
   tags = merge(var.tags, {
@@ -47,7 +47,7 @@ resource "azurerm_storage_account" "app_storage" {
 
 # Virtual Network
 resource "azurerm_virtual_network" "main" {
-  name                = "vnet-${var.project_name}-${var.environment}"
+  name                = "${var.project_name}-${var.environment}-vnet"
   address_space       = var.environment == "production" ? ["10.1.0.0/16"] : ["10.0.0.0/16"]
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
@@ -68,7 +68,7 @@ resource "azurerm_subnet" "app" {
 
 # Network Security Group
 resource "azurerm_network_security_group" "app" {
-  name                = "nsg-${var.project_name}-${var.environment}"
+  name                = "${var.project_name}-${var.environment}-nsg"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
 
@@ -125,7 +125,7 @@ resource "azurerm_subnet_network_security_group_association" "app" {
 
 # Public IP for the VM
 resource "azurerm_public_ip" "vm" {
-  name                = "pip-vm-${var.project_name}-${var.environment}"
+  name                = "${var.project_name}-${var.environment}-vm-pip"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   allocation_method   = "Static"
@@ -139,7 +139,7 @@ resource "azurerm_public_ip" "vm" {
 
 # Network Interface for VM
 resource "azurerm_network_interface" "vm" {
-  name                = "nic-vm-${var.project_name}-${var.environment}"
+  name                = "${var.project_name}-${var.environment}-vm-nic"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
 
@@ -164,7 +164,7 @@ resource "tls_private_key" "vm" {
 }
 
 resource "azurerm_ssh_public_key" "vm" {
-  name                = "ssh-key-vm-${var.project_name}-${var.environment}"
+  name                = "${var.project_name}-${var.environment}-vm-ssh-key"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   public_key          = fileexists("~/.ssh/id_rsa.pub") ? file("~/.ssh/id_rsa.pub") : tls_private_key.vm[0].public_key_openssh
@@ -177,7 +177,7 @@ resource "azurerm_ssh_public_key" "vm" {
 
 # Linux Virtual Machine
 resource "azurerm_linux_virtual_machine" "app" {
-  name                = "vm-${var.project_name}-${var.environment}-001"
+  name                = "${var.project_name}-${var.environment}-vm"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   size                = var.vm_size
@@ -209,7 +209,7 @@ resource "azurerm_linux_virtual_machine" "app" {
   # Custom data script for initial setup
   custom_data = base64encode(templatefile("${path.module}/scripts/cloud-init.yml", {
     environment = var.environment
-    hostname    = "vm-${var.project_name}-${var.environment}-001"
+    hostname    = "${var.project_name}-${var.environment}-vm"
   }))
 
   tags = merge(var.tags, {
@@ -222,7 +222,7 @@ resource "azurerm_linux_virtual_machine" "app" {
 # Log Analytics Workspace (if monitoring enabled)
 resource "azurerm_log_analytics_workspace" "main" {
   count               = var.enable_monitoring ? 1 : 0
-  name                = "law-${var.project_name}-${var.environment}"
+  name                = "${var.project_name}-${var.environment}-law"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   sku                 = "PerGB2018"

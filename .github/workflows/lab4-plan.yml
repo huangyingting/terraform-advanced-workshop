@@ -10,11 +10,6 @@ on:
       - ".github/workflows/lab4-plan.yml"
       - ".github/workflows/lab4-apply.yml"
 
-# Allow only one concurrent planning workflow
-concurrency:
-  group: terraform-plan-${{ github.head_ref }}
-  cancel-in-progress: true
-
 permissions:
   id-token: write
   contents: read
@@ -32,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: true
+      max-parallel: 1
       matrix:
         env: [staging, production]
     environment: ${{ matrix.env }}
@@ -74,27 +71,40 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
+          set +e
           terraform plan \
             -var-file="${{ matrix.env }}.tfvars" \
             -out="${{ matrix.env }}.tfplan" \
             -detailed-exitcode
+          exitcode=$?
+          echo "plan_exitcode=$exitcode" >> $GITHUB_OUTPUT
+          if [ $exitcode -eq 1 ]; then
+            echo "Terraform plan failed."
+            exit 1
+          fi
+          echo "Terraform plan exit code: $exitcode (0=no changes, 2=changes)"
         continue-on-error: false
 
       - name: Generate Plan Summary
         id: summary
         run: |
-          # Create a summary of the plan
           terraform show -no-color ${{ matrix.env }}.tfplan > plan_output.txt
-
-          # Extract key information
-          CHANGES=$(grep -E "(Plan:|No changes)" plan_output.txt || echo "Plan: Unknown changes")
-
-          # Save plan summary for PR comment
-          cat > plan_summary_${{ matrix.env }}.md << 'EOF'
+          PLAN_EXITCODE="${{ steps.plan.outputs.plan_exitcode }}"
+          if [ "$PLAN_EXITCODE" = "0" ]; then
+            PLAN_STATUS_TEXT="✅ No changes"
+          elif [ "$PLAN_EXITCODE" = "2" ]; then
+            PLAN_STATUS_TEXT="🟡 Changes detected"
+          else
+            PLAN_STATUS_TEXT="❌ Error"
+          fi
+            # Extract plan line if present
+          CHANGES=$(grep -E "(Plan:|No changes)" plan_output.txt || echo "Plan result line not found")
+          cat > plan_summary_${{ matrix.env }}.md <<EOF
           ## 🏗️ Terraform Plan: ${{ matrix.env }}
 
-          **Plan Status:** ${{ steps.plan.outcome == 'success' && '✅ Success' || '❌ Failed' }}
-          **Changes:** $CHANGES
+          **Status:** $PLAN_STATUS_TEXT  
+          **Exit Code:** $PLAN_EXITCODE  
+          **Summary:** $CHANGES
 
           <details>
           <summary>📋 Show Plan Details</summary>
@@ -102,12 +112,10 @@ jobs:
           ```hcl
           $(cat plan_output.txt)
           ```
-
           </details>
 
           ---
           EOF
-
       - name: Upload Plan Artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -121,11 +129,14 @@ jobs:
 
       - name: Set Plan Status
         run: |
-          if [ "${{ steps.plan.outcome }}" == "success" ]; then
-            echo "PLAN_STATUS=success" >> $GITHUB_ENV
-          else
+          exitcode="${{ steps.plan.outputs.plan_exitcode }}"
+          if [ "$exitcode" = "1" ]; then
             echo "PLAN_STATUS=failed" >> $GITHUB_ENV
             exit 1
+          elif [ "$exitcode" = "2" ]; then
+            echo "PLAN_STATUS=changes" >> $GITHUB_ENV
+          else
+            echo "PLAN_STATUS=no-changes" >> $GITHUB_ENV
           fi
 
   comment:

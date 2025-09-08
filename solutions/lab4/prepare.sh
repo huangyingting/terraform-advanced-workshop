@@ -195,6 +195,7 @@ create_backend_storage() {
     
     SUBSCRIPTION_ID=$(az account show --query id -o tsv)
     LOCATION="southeastasia"  # Default location
+    PUBLIC_NETWORK_ACCESS="Enabled"  # Explicitly allow public internet access
 
     # Deterministic suffix from subscription ID (first 8 chars of sha256)
     SA_SUFFIX=$(echo -n "${SUBSCRIPTION_ID}" | sha256sum | cut -c1-8)
@@ -220,10 +221,19 @@ create_backend_storage() {
             --sku Standard_LRS \
             --kind StorageV2 \
             --allow-blob-public-access false \
-            --min-tls-version TLS1_2 > /dev/null
-        print_success "Created staging storage account: ${STAGING_SA}"
+            --min-tls-version TLS1_2 \
+            --public-network-access "${PUBLIC_NETWORK_ACCESS}" > /dev/null
+        print_success "Created staging storage account: ${STAGING_SA} (public network access enabled)"
     else
         print_warning "Staging storage account already exists: ${STAGING_SA}"
+        CURRENT_PNA=$(az storage account show --name "${STAGING_SA}" --resource-group "${STAGING_RG}" --query "publicNetworkAccess" -o tsv 2>/dev/null || echo "")
+        if [[ "${CURRENT_PNA}" != "Enabled" ]]; then
+            az storage account update \
+              --name "${STAGING_SA}" \
+              --resource-group "${STAGING_RG}" \
+              --public-network-access "${PUBLIC_NETWORK_ACCESS}" >/dev/null
+            print_success "Enabled public network access for staging storage account: ${STAGING_SA}"
+        fi
     fi
     
     # Create container for staging
@@ -253,10 +263,19 @@ create_backend_storage() {
             --sku Standard_GRS \
             --kind StorageV2 \
             --allow-blob-public-access false \
-            --min-tls-version TLS1_2 > /dev/null
-        print_success "Created production storage account: ${PRODUCTION_SA}"
+            --min-tls-version TLS1_2 \
+            --public-network-access "${PUBLIC_NETWORK_ACCESS}" > /dev/null
+        print_success "Created production storage account: ${PRODUCTION_SA} (public network access enabled)"
     else
         print_warning "Production storage account already exists: ${PRODUCTION_SA}"
+        CURRENT_PNA=$(az storage account show --name "${PRODUCTION_SA}" --resource-group "${PRODUCTION_RG}" --query "publicNetworkAccess" -o tsv 2>/dev/null || echo "")
+        if [[ "${CURRENT_PNA}" != "Enabled" ]]; then
+            az storage account update \
+              --name "${PRODUCTION_SA}" \
+              --resource-group "${PRODUCTION_RG}" \
+              --public-network-access "${PUBLIC_NETWORK_ACCESS}" >/dev/null
+            print_success "Enabled public network access for production storage account: ${PRODUCTION_SA}"
+        fi
     fi
     
     # Create container for production
@@ -270,7 +289,42 @@ create_backend_storage() {
     export PRODUCTION_STORAGE_ACCOUNT="${PRODUCTION_SA}"
 }
 
-# New: Create GitHub environments and add secrets
+# Assign Storage Blob Data Contributor on each storage account
+assign_storage_blob_roles() {
+    print_status "Assigning 'Storage Blob Data Contributor' on storage accounts..."
+    SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+    # Ensure storage account variables exist (created earlier)
+    local pairs=(
+        "lab4-tf-staging-rg:${STAGING_STORAGE_ACCOUNT}"
+        "lab4-tf-prod-rg:${PRODUCTION_STORAGE_ACCOUNT}"
+    )
+
+    for pair in "${pairs[@]}"; do
+        IFS=":" read -r rg sa <<< "$pair"
+        if [[ -z "$sa" ]]; then
+            print_warning "Skipping empty storage account for RG $rg"
+            continue
+        fi
+        SCOPE="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${rg}/providers/Microsoft.Storage/storageAccounts/${sa}"
+        EXISTING=$(az role assignment list \
+            --assignee "${APP_ID}" \
+            --role "Storage Blob Data Contributor" \
+            --scope "${SCOPE}" \
+            --query "[0].principalId" -o tsv 2>/dev/null || echo "")
+        if [[ -z "${EXISTING}" || "${EXISTING}" == "null" ]]; then
+            az role assignment create \
+                --assignee "${APP_ID}" \
+                --role "Storage Blob Data Contributor" \
+                --scope "${SCOPE}" >/dev/null
+            print_success "Assigned 'Storage Blob Data Contributor' on ${sa}"
+        else
+            print_warning "Role already present on ${sa}"
+        fi
+    done
+}
+
+# Create GitHub environments and add secrets
 create_github_environments() {
     print_status "Creating GitHub environments and adding secrets..."
 
@@ -346,6 +400,7 @@ main() {
     configure_federated_credentials
     assign_permissions
     create_backend_storage
+    assign_storage_blob_roles   # Added call
     create_github_environments
     display_configuration
     
