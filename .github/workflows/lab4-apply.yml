@@ -34,7 +34,10 @@ jobs:
     outputs:
       deployment-status: ${{ steps.apply.outcome }}
       resource-summary: ${{ steps.output.outputs.summary }}
-
+      
+    defaults:
+      run:
+        working-directory: solutions/lab4
     env:
       ARM_USE_OIDC: true
       ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
