@@ -7,11 +7,6 @@ project_name = "lab4"
 vm_size        = "Standard_B1s"
 admin_username = "azureuser"
 
-# Staging-specific networking
-allowed_ssh_ips = [
-  "*" # In production, restrict to specific IP ranges
-]
-
 # Monitoring settings
 enable_monitoring = false # Disable for cost optimization in staging
 

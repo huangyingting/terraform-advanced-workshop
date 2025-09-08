@@ -32,12 +32,6 @@ variable "admin_username" {
   default     = "azureuser"
 }
 
-variable "allowed_ssh_ips" {
-  description = "List of IP addresses allowed for SSH access"
-  type        = list(string)
-  default     = ["*"] # In production, replace with specific IP ranges
-}
-
 variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)

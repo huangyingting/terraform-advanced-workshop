@@ -3,6 +3,7 @@ resource "random_id" "suffix" {
   byte_length = 4
 }
 
+
 # Resource Group
 resource "azurerm_resource_group" "main" {
   name     = "${var.project_name}-${var.environment}-rg"
@@ -72,19 +73,6 @@ resource "azurerm_network_security_group" "app" {
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
 
-  # SSH access
-  security_rule {
-    name                       = "SSH"
-    priority                   = 1001
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefixes    = var.allowed_ssh_ips
-    destination_address_prefix = "*"
-  }
-
   # HTTP access (for testing)
   security_rule {
     name                       = "HTTP"
@@ -115,6 +103,21 @@ resource "azurerm_network_security_group" "app" {
     Environment = var.environment
     Purpose     = "network-security"
   })
+}
+
+# SSH rule (wildcard case)
+resource "azurerm_network_security_rule" "ssh_wildcard" {
+  name                        = "SSH"
+  priority                    = 1001
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "22"
+  source_address_prefix       = "*"
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_resource_group.main.name
+  network_security_group_name = azurerm_network_security_group.app.name
 }
 
 # Associate NSG with subnet

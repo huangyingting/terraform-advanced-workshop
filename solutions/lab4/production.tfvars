@@ -7,11 +7,6 @@ project_name = "lab4"
 vm_size        = "Standard_B2s" # Larger size for production
 admin_username = "azureuser"
 
-# Production-specific networking - restrict SSH access
-allowed_ssh_ips = [
-  "*" # In production, restrict to specific IP ranges
-]
-
 # Monitoring settings
 enable_monitoring = true # Enable full monitoring in production
 
