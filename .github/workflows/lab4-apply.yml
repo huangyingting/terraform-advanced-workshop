@@ -95,8 +95,29 @@ jobs:
       - name: Terraform Output
         id: output
         run: |
-          terraform output -json > staging_outputs.json
-          echo "summary=$(terraform output -json resource_summary | jq -c .)" >> $GITHUB_OUTPUT
+          set +e
+          terraform output -json > staging_outputs.json 2>/dev/null
+          if [ $? -ne 0 ]; then
+            echo "{}" > staging_outputs.json
+            echo "No Terraform outputs available."
+          fi
+          if terraform output -json resource_summary >/dev/null 2>&1; then
+            echo "summary=$(terraform output -json resource_summary | jq -c .)" >> $GITHUB_OUTPUT
+          else
+            echo "summary={}" >> $GITHUB_OUTPUT
+          fi
+          if [ "${{ steps.plan.outputs.plan_exit_code }}" = "2" ]; then
+            if terraform output -raw vm_public_ip >/dev/null 2>&1; then
+              echo "VM Public IP: $(terraform output -raw vm_public_ip)"
+            fi
+            if terraform output -raw ssh_connection_command >/dev/null 2>&1; then
+              echo "SSH Command: $(terraform output -raw ssh_connection_command)"
+            fi
+          fi
+          set -e
+
+      - name: Pull Remote State
+        run: terraform state pull > lab4.tfstate
 
       - name: Upload Deployment Artifacts
         uses: actions/upload-artifact@v4
@@ -104,8 +125,8 @@ jobs:
         with:
           name: staging-deployment
           path: |
-            staging_outputs.json
-            terraform.tfstate
+            solutions/lab4/staging_outputs.json
+            solutions/lab4/lab4.tfstate
           retention-days: 30
 
       - name: Test Staging Deployment
@@ -191,12 +212,30 @@ jobs:
 
       - name: Terraform Output
         id: output
-        if: steps.plan.outputs.plan_exit_code == '2'
         run: |
-          terraform output -json > production_outputs.json
-          echo "🎉 Production deployment completed successfully!"
-          echo "VM Public IP: $(terraform output -raw vm_public_ip)"
-          echo "SSH Command: $(terraform output -raw ssh_connection_command)"
+            set +e
+            terraform output -json > production_outputs.json 2>/dev/null
+            if [ $? -ne 0 ]; then
+              echo "{}" > production_outputs.json
+              echo "No Terraform outputs available."
+            fi
+            if terraform output -json resource_summary >/dev/null 2>&1; then
+              echo "summary=$(terraform output -json resource_summary | jq -c .)" >> $GITHUB_OUTPUT
+            else
+              echo "summary={}" >> $GITHUB_OUTPUT
+            fi
+            if [ "${{ steps.plan.outputs.plan_exit_code }}" = "2" ]; then
+              if terraform output -raw vm_public_ip >/dev/null 2>&1; then
+                echo "VM Public IP: $(terraform output -raw vm_public_ip)"
+              fi
+              if terraform output -raw ssh_connection_command >/dev/null 2>&1; then
+                echo "SSH Command: $(terraform output -raw ssh_connection_command)"
+              fi
+            fi
+            set -e
+
+      - name: Pull Remote State
+        run: terraform state pull > lab4.tfstate
 
       - name: Upload Deployment Artifacts
         uses: actions/upload-artifact@v4
@@ -204,8 +243,8 @@ jobs:
         with:
           name: production-deployment
           path: |
-            production_outputs.json
-            terraform.tfstate
+            solutions/lab4/production_outputs.json
+            solutions/lab4/lab4.tfstate
           retention-days: 90
 
       - name: Test Production Deployment
@@ -232,9 +271,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-
-            // Read production outputs
-            const outputs = JSON.parse(fs.readFileSync('production_outputs.json', 'utf8'));
+            const outputs = JSON.parse(fs.readFileSync('solutions/lab4/production_outputs.json', 'utf8'));
 
             const summary = `
             ## 🚀 Production Deployment Successful
