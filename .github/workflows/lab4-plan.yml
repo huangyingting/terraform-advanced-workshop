@@ -35,6 +35,9 @@ jobs:
       matrix:
         env: [staging, production]
     environment: ${{ matrix.env }}
+    defaults:
+      run:
+        working-directory: solutions/lab4
 
     env:
       ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -43,7 +46,6 @@ jobs:
       ARM_USE_OIDC: true
 
     steps:
-    
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -73,8 +75,8 @@ jobs:
         id: plan
         run: |
           terraform plan \
-            -var-file="${{ matrix.environment }}.tfvars" \
-            -out="${{ matrix.environment }}.tfplan" \
+            -var-file="${{ matrix.env }}.tfvars" \
+            -out="${{ matrix.env }}.tfplan" \
             -detailed-exitcode
         continue-on-error: false
 
@@ -82,14 +84,14 @@ jobs:
         id: summary
         run: |
           # Create a summary of the plan
-          terraform show -no-color ${{ matrix.environment }}.tfplan > plan_output.txt
+          terraform show -no-color ${{ matrix.env }}.tfplan > plan_output.txt
 
           # Extract key information
           CHANGES=$(grep -E "(Plan:|No changes)" plan_output.txt || echo "Plan: Unknown changes")
 
           # Save plan summary for PR comment
-          cat > plan_summary_${{ matrix.environment }}.md << 'EOF'
-          ## 🏗️ Terraform Plan: ${{ matrix.environment }}
+          cat > plan_summary_${{ matrix.env }}.md << 'EOF'
+          ## 🏗️ Terraform Plan: ${{ matrix.env }}
 
           **Plan Status:** ${{ steps.plan.outcome == 'success' && '✅ Success' || '❌ Failed' }}
           **Changes:** $CHANGES
@@ -110,11 +112,11 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: terraform-plan-${{ matrix.environment }}
+          name: terraform-plan-${{ matrix.env }}
           path: |
-            ${{ matrix.environment }}.tfplan
-            plan_output.txt
-            plan_summary_${{ matrix.environment }}.md
+            solutions/lab4/${{ matrix.env }}.tfplan
+            solutions/lab4/plan_output.txt
+            solutions/lab4/plan_summary_${{ matrix.env }}.md
           retention-days: 30
 
       - name: Set Plan Status
