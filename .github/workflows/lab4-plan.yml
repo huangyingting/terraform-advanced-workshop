@@ -88,7 +88,9 @@ jobs:
       - name: Generate Plan Summary
         id: summary
         run: |
+          set -e
           terraform show -no-color ${{ matrix.env }}.tfplan > plan_output.txt
+          ls -l plan_output.txt || true
           PLAN_EXITCODE="${{ steps.plan.outputs.plan_exitcode }}"
           if [ "$PLAN_EXITCODE" = "0" ]; then
             PLAN_STATUS_TEXT="✅ No changes"
@@ -97,25 +99,30 @@ jobs:
           else
             PLAN_STATUS_TEXT="❌ Error"
           fi
-            # Extract plan line if present
-          CHANGES=$(grep -E "(Plan:|No changes)" plan_output.txt || echo "Plan result line not found")
-          cat > plan_summary_${{ matrix.env }}.md <<EOF
-          ## 🏗️ Terraform Plan: ${{ matrix.env }}
-
-          **Status:** $PLAN_STATUS_TEXT  
-          **Exit Code:** $PLAN_EXITCODE  
-          **Summary:** $CHANGES
-
-          <details>
-          <summary>📋 Show Plan Details</summary>
-
-          ```hcl
-          $(cat plan_output.txt)
-          ```
-          </details>
-
-          ---
-          EOF
+          CHANGES_LINE=$(grep -E "(Plan:|No changes)" plan_output.txt || echo "Plan result line not found")
+          FILE="plan_summary_${{ matrix.env }}.md"
+          {
+            echo "## 🏗️ Terraform Plan: ${{ matrix.env }}"
+            echo ""
+            echo "**Status:** $PLAN_STATUS_TEXT"
+            echo "**Exit Code:** $PLAN_EXITCODE"
+            echo "**Summary:** $CHANGES_LINE"
+            echo ""
+            echo "<details>"
+            echo "<summary>📋 Show Plan Details</summary>"
+            echo ""
+            echo '```hcl'
+            if [ -s plan_output.txt ]; then
+              cat plan_output.txt
+            else
+              echo "# plan_output.txt missing or empty"
+            fi
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "---"
+          } > "$FILE"
+          echo "Generated $FILE (size: $(stat -c%s "$FILE" 2>/dev/null || echo 0) bytes)"
       - name: Upload Plan Artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -126,18 +133,6 @@ jobs:
             solutions/lab4/plan_output.txt
             solutions/lab4/plan_summary_${{ matrix.env }}.md
           retention-days: 30
-
-      - name: Set Plan Status
-        run: |
-          exitcode="${{ steps.plan.outputs.plan_exitcode }}"
-          if [ "$exitcode" = "1" ]; then
-            echo "PLAN_STATUS=failed" >> $GITHUB_ENV
-            exit 1
-          elif [ "$exitcode" = "2" ]; then
-            echo "PLAN_STATUS=changes" >> $GITHUB_ENV
-          else
-            echo "PLAN_STATUS=no-changes" >> $GITHUB_ENV
-          fi
 
   comment:
     name: "Comment PR"
