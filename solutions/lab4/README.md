@@ -1,235 +1,229 @@
-## Overview
+## Lab 4: Secure Multi-Environment Terraform Delivery with GitHub Actions
 
-The primary goal of Lab 4 is to implement secure, environment-aware GitHub Actions workflows for Terraform: validating Pull Requests (plan only), promoting approved changes to staging, and then deploying to production with OpenID Connect (OIDC) – all without storing long‑lived cloud credentials. The infrastructure code (VNet, VM, NSG, optional monitoring) exists mainly to give the workflows something realistic to manage.
+One-line summary: Build a PR → staging → production Terraform pipeline using GitHub Actions + Azure OIDC (no static credentials) with environment separation, promotion controls, and extensibility hooks.
 
-Core themes:
-* GitHub OIDC federation (no secrets) via automated bootstrap (`prepare.sh`)
-* Environment separation (staging vs production) using `.tfvars` + distinct remote state backends
-* PR feedback loop (plan surfaced in workflow logs / PR comments)
-* Promotion mechanics (merge to main triggers staging apply; protected production environment triggers prod apply)
-* Conditional features (monitoring on only in production)
-* Traceability through outputs and tagging strategy
+---
 
-You will leave this lab with a pattern you can generalize to multi-stage Terraform delivery pipelines.
+## 1. Learning Objectives
+By the end you will be able to:
+* Use GitHub OIDC to authenticate Terraform in CI without stored secrets
+* Structure dual-environment (staging/production) Terraform with minimal duplication
+* Surface Terraform plan feedback automatically on Pull Requests
+* Promote infrastructure changes safely through staged applies
+* Prepare hooks for policy, security, cost, and drift automation
 
-### Architecture
+## 2. What You Will Build
+Terraform configs (VNet, VM, NSG, optional monitoring) used as a realistic target for a secure delivery workflow.
+
+Environment differences:
+
+| Aspect | Staging | Production | Rationale |
+|--------|---------|-----------|-----------|
+| VM size | (smaller) e.g. Standard_B1s | Standard_D2s_v3 | Cost vs performance |
+| Monitoring | Disabled | Enabled | Save cost in staging |
+| Retention | Short | Longer | Compliance / forensics |
+| Apply Mode | Auto after merge | Manual approval gate | Risk reduction |
+| Scale (future) | Single | Expandable | Progressive hardening |
+
+## 3. Architecture Overview
 ```mermaid
 graph TB
     subgraph "GitHub Repository"
         GR[Repository Code]
     end
-    
     subgraph "GitHub Actions Workflows"
         subgraph "PR Workflow"
-            PR1[Checkout Code]
+            PR1[Checkout]
             PR2[Azure OIDC Login]
             PR3[Terraform Setup]
-            PR4[Format Check]
-            PR5[Validate]
-            PR6[Plan staging & prod]
-            PR7[Comment Plan on PR]
-            
-            PR1 --> PR2 --> PR3 --> PR4 --> PR5 --> PR6 --> PR7
+            PR4[fmt + validate]
+            PR5[Plan staging & prod]
+            PR6[PR Comment]
+            PR1 --> PR2 --> PR3 --> PR4 --> PR5 --> PR6
         end
-        
         subgraph "Deploy Workflow"
             subgraph "Staging Job"
                 S1[Checkout & Setup]
-                S2[Azure OIDC Login]
-                S3[Terraform Plan]
-                S4[Terraform Apply Auto]
-                
+                S2[OIDC Login]
+                S3[Plan]
+                S4[Apply]
                 S1 --> S2 --> S3 --> S4
             end
-            
             subgraph "Production Job"
-                PA[Manual Approval Required]
+                PA[Manual Approval]
                 P1[Checkout & Setup]
-                P2[Azure OIDC Login]
-                P3[Terraform Plan]
-                P4[Terraform Apply]
-                
+                P2[OIDC Login]
+                P3[Plan]
+                P4[Apply]
                 PA --> P1 --> P2 --> P3 --> P4
             end
-            
             S4 --> PA
         end
     end
-    
-      subgraph "Microsoft Entra ID"
-         AR[App Registration:<br/>github-actions-terraform]
-         FC1[Federated Credentials:<br/>repo-branch-main]
-         FC2[Federated Credentials:<br/>repo-pull-request]
-         SP[Service Principal:<br/>Contributor role]
-         
-         AR --- FC1
-         AR --- FC2
-         AR --- SP
-      end
-
-    subgraph "Azure Environment"
-        
-        subgraph "Azure Subscription"
-            subgraph "Staging Environment"
-                SRG[rg-terraform-staging]
-                SSA[Storage Account: staging backend]
-                SAR[Application Resources]
-                
-                SRG --- SSA
-                SRG --- SAR
-            end
-            
-            subgraph "Production Environment"
-                PRG[rg-terraform-production]
-                PSA[Storage Account: production backend]
-                PAR[Application Resources]
-                
-                PRG --- PSA
-                PRG --- PAR
-            end
+    subgraph "Microsoft Entra ID"
+        AR[App Registration\n github-actions-terraform]
+        FC1[Federated Cred: main]
+        FC2[Federated Cred: PR]
+        FC3[Federated Cred: environments]
+        SP[Service Principal - Contributor]
+        AR --- FC1
+        AR --- FC2
+        AR --- FC3
+        AR --- SP
+    end
+    subgraph "Azure Subscription"
+        subgraph "Staging"
+            SRG[rg-terraform-staging]
+            SSA[Storage acct backend]
+            SAR[App Resources]
+        end
+        subgraph "Production"
+            PRG[rg-terraform-production]
+            PSA[Storage acct backend]
+            PAR[App Resources]
         end
     end
-    
     GR -->|pull_request| PR1
-    GR -->|push to main| S1
-    
+    GR -->|push main| S1
     PR2 -.-> SP
     S2 -.-> SP
     P2 -.-> SP
-    
     S4 -.-> SSA
     P4 -.-> PSA
-    
+```
 
-## Prerequisites
-
-* Azure Subscription with rights to create RBAC role assignments & AD app registrations
+## 4. Prerequisites
+* Azure subscription (rights to create RBAC role assignments + App Registrations)
 * Logged in locally: `az login`
-* GitHub CLI authenticated: `gh auth login`
-* Terraform >= 1.5 (tested with >=1.6 recommended)
-* Bash (for `prepare.sh`)
-* SSH client (for VM access)
-* Existing (or willingness to create) GitHub repository (`GITHUB_REPO` environment variable)
+* GitHub CLI: `gh auth login`
+* Terraform CLI
+* Bash & OpenSSH client
+* Environment variable: `GITHUB_REPO="<org>/<repo>"`
+Optional:
+* Separate subscription or clear naming to avoid collisions
 
-Optional but recommended:
-* Existing `~/.ssh/id_rsa.pub` (script will generate a key if absent)
-* Separate Azure subscription or clear naming to avoid collisions
+## 5. Quick Start
 
-## Step-by-Step Instructions
+### 5.1 Bootstrap
+1. Export repo variable and run bootstrap:
+   ```bash
+   export GITHUB_REPO="<org>/<repo>"
+   ./prepare.sh
+   ```
+2. Script creates: App Registration, federated credentials, storage accounts (staging/prod), GitHub environments, secrets.
+3. Capture outputs (Client ID, Tenant ID, Subscription ID, storage account names) for reference.
+4. Copy solutions/lab4/.github/workflows/lab4-plan.yml, lab4-apply.yml, lab4-destroy.yml to .github/workflows/.
 
-### 1. Bootstrap Azure + GitHub (One-Time)
-Run the helper script to create the Azure AD application, federated credentials, storage accounts for remote state, GitHub environments, and required secrets:
+### 5.1 Post-Bootstrap Governance
+Immediately enforce controls:
+* Branch protection on `main` (require PR + approvals, optionally dismiss stale reviews)
+* Environment protection: reviewers for `staging` and stricter reviewers for `production`
+* Optional: wait timer for production
+* Optional: enable secret scanning / dependency alerts
+* Validate: open a PR → plan comment appears; direct push to `main` blocked
+
+### 5.2 Workflows Validation
+1. Create a test branch from main and make a trivial change (e.g. outputs.tf).
+2. Push branch and open a PR.
+3. Verify that the plan comment appears in the PR.
+4. Merge the PR and observe staging apply; approve production job to complete.
+
+## 6. Repository Layout (Lab 4 Relevant)
 ```
-export GITHUB_REPO="<org>/<repo>"
-./prepare.sh
+solutions/lab4/
+  main.tf
+  outputs.tf
+  production.tfvars
+  staging.tfvars
+  providers.tf
+  variables.tf
+  prepare.sh
+  scripts/cloud-init.yml
 ```
-Outputs include: Client ID, Tenant ID, Subscription ID, storage account names, environment confirmation.
 
-#### Post-Bootstrap Required Manual Governance Steps
-Immediately after running `./prepare.sh`, configure repository governance so workflows enforce proper review & approval:
+## 7. Terraform Configuration Strategy
+* Separate `*.tfvars` for environment-specific sizing & toggles
+* Distinct remote state backends (one per environment) created by bootstrap
+* Conditional monitoring (enabled only when production flag set)
+* Tagging strategy for traceability (consider repo, environment, owner)
 
-1. Protect the `main` branch (Settings → Branches → Add rule):
-	* Require a pull request before merging → Require approvals
-	* Dismiss stale pull request approvals when new commits are pushed (optional but recommended)
-2. Configure Environment protection:
-	* Go to Settings → Environments → `staging` → Require reviewers → add at least one team/user
-	* Repeat for `production` (typically stricter: 2 reviewers or a specific ops/security group)
-	* (Optional) Add wait timer for `production` to introduce a controlled pause
-3. (Optional) Enable required secret scanning / dependency alerts for defense-in-depth.
-4. Test by opening a PR: verify direct push to `main` is blocked and plan workflow comment appears.
+### 7.1 Backend Pattern (Conceptual)
+Each workflow step initializes with backend config referencing its env-specific storage account + key (`lab4.tfstate`).
 
-Result: merges cannot bypass plan visibility, and production deploys require explicit human approval via the protected environment gate.
+### 7.2 Variables & Conditionals
+Use boolean or string variables to enable production-only resources (monitoring, retention). Keep defaults safe & inexpensive.
 
-### 2. Workflow Overview (Actual Files)
+## 8. CI/CD Workflows Summary
 | Purpose | File | Trigger | Key Actions | Notes |
 |---------|------|---------|-------------|-------|
-| Pull Request planning (both envs) | `.github/workflows/lab4-plan.yml` | `pull_request` to `main`, manual dispatch | Matrix over `staging, production`; `fmt`, `validate`, dual `plan`, summarize + PR comment | Produces artifacts & rich PR comment |
-| Continuous deployment (staging → production) | `.github/workflows/lab4-apply.yml` | `push` to `main`, manual dispatch | Staging plan/apply then production plan/apply (if staging succeeded) | Skips apply when plan exit code = 0 |
-| Selective destroy | `.github/workflows/lab4-destory.yml` | Manual dispatch with inputs | Safety confirm, plan-destroy + apply per env | Typo in filename (`destory`) kept intentionally |
+| PR planning (both envs) | `.github/workflows/lab4-plan.yml` | pull_request, manual | fmt, validate, matrix plan, PR comment | Plans only |
+| Staging → Production apply | `.github/workflows/lab4-apply.yml` | push to main, manual | staging plan/apply then prod (after approval) | Promotion chain |
+| Selective destroy | `.github/workflows/lab4-destory.yml` | manual dispatch | confirm, plan-destroy, apply | Typo preserved intentionally |
 
-### 3. Workflow Deep Dive
-#### `lab4-plan.yml`
-* Runs for PRs touching lab4 Terraform or workflow files.
-* Matrix executes `plan` for `staging` and `production` using corresponding `*.tfvars`.
-* Generates markdown summaries (`plan_summary_<env>.md`) and comments (updates in place if re-run).
-* Exit code handling: 0 = no changes, 2 = changes, 1 = failure (fails job).
+## 9. Workflow Deep Dive
+### 9.1 Plan Workflow (`lab4-plan.yml`)
+* Matrix: `staging`, `production`
+* Produces markdown summaries (`plan_summary_<env>.md`)
+* Exit codes: 0=no change, 2=changes, 1=failure (job fails)
+* Updates a single PR comment incrementally
 
-#### `lab4-apply.yml`
-* Trigger: merge (push to `main`) or manual dispatch.
-* Staging job: init → plan → conditional apply → output capture → optional HTTP health check.
-* Production job waits for staging success, repeats pattern with `production.tfvars`.
-* Artifacts: state snapshot (`post-apply-*.tfstate`) + JSON outputs.
+### 9.2 Apply Workflow (`lab4-apply.yml`)
+* Trigger: merge (push to main) or manual dispatch
+* Staging auto-applies; Production waits for environment approval gate
+* Artifacts: post-apply state snapshot + JSON outputs
+* Optional health checks (extend here)
 
-#### `lab4-destory.yml`
-* Manual only; requires `environment` selection and `DESTROY` confirmation string.
-* Plans destruction; only applies when exit code 2 (resources exist).
-* Runs staging before production when `all` selected.
+### 9.3 Destroy Workflow (`lab4-destory.yml`)
+* Manual safety: requires confirmation string + environment selection
+* Applies destroy only if plan exit code = 2
+* Supports `all` ordering: staging then production
 
-### 4. Environment Config & Promotion Logic
-Two `.tfvars` files drive differences:
-* `staging.tfvars` – low cost footprint, monitoring disabled
-* `production.tfvars` – higher spec VM, monitoring enabled, longer retention
+## 10. Security & Governance
+| Control | Mechanism | Benefit |
+|---------|----------|---------|
+| AuthN | GitHub OIDC → Azure federated credentials | No long-lived secrets |
+| AuthZ | SP with least-required role (Contributor / scoped RG) | Blast radius reduction |
+| Branch Protection | GitHub branch rules | Prevent bypassing review |
+| Environment Protection | GitHub environments + reviewers | Manual gate for prod |
+| Future Policies | tfsec/checkov/OPA/Conftest | Early failure of non-compliance |
 
-Promotion flow implemented:
-1. PR → `lab4-plan.yml` (visibility only)
-2. Merge → `lab4-apply.yml` (staging apply, then production apply)
-3. Optional manual `workflow_dispatch` for re-deploy or `lab4-destory.yml` for teardown
+## 11. Cost & Optimization
+Integrate Infracost in PR workflow to annotate plan with delta cost. Potential policy: block when % or absolute increase > threshold.
 
-### 5. Local Debugging (Optional)
-You can still run locally if needed:
-```
-terraform init -backend-config="resource_group_name=<staging backend RG>" \
-	-backend-config="storage_account_name=<staging sa>" \
-	-backend-config="container_name=tfstate" \
-	-backend-config="key=staging.tfstate"
+## 12. Troubleshooting
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| OIDC login fails | Federated credential mismatch | Check subject format matches repo + ref |
+| No PR plan comment | Missing permissions | Add `pull-requests: write` under workflow permissions |
+| Plan exit code 1 | Syntax/validation error | Inspect validate/plan logs earlier in job |
+| State lock stuck | Previous job aborted | Use `terraform force-unlock <lock-id>` cautiously |
+| Production job skipped | Env approval pending | Approve in GitHub Environments UI |
 
-terraform plan -var-file=staging.tfvars
-```
+## 13. Cleanup
+Automated:
+* Run destroy workflow (choose environment, confirm)
 
-### 6. Accessing the Deployed VM
-After staging or production apply completes, retrieve the suggested SSH command from workflow logs or locally via:
-```
-terraform output -raw ssh_connection_command
-```
-Ensure your public key existed before apply or manage keys centrally in real scenarios.
+## 14. Extension Ideas
+* Add tfsec / checkov security scan to PR workflow
+* Integrate Infracost cost delta + threshold enforcement
+* Drift detection scheduled plan (cron)
+* Export plan JSON → OPA policy evaluation
+* ChatOps notifications (Teams/Slack) on apply result
+* Automated tagging enrichment (Git commit SHA, PR number)
 
-### 7. Cleaning Up (Pipelines or Local)
-Trigger destroy workflows (if you author them) or run locally per environment:
-```
-terraform destroy -var-file=staging.tfvars
-terraform destroy -var-file=production.tfvars
-```
+## 15. Review Questions
+1. How will you enforce policy (tag, security, cost) gates pre-merge?
+2. What criteria justify automatic vs manual production deployment?
+3. How can backend + var selection be standardized (composite actions / scripts)?
+4. Where do you centralize reusable workflow templates?
+5. How do you surface drift or failed applies to stakeholders?
+6. Which additional scanners fit your compliance posture?
+7. How would you block unexpectedly expensive changes with cost data?
 
-### 8. Extending the Pipeline (Ideas)
-* Add a security scan stage (tfsec / checkov) in PR workflow
-* Generate and upload cost estimate (Infracost) on PRs
-* Emit structured outputs to an artifact for downstream release notes
-* Introduce drift detection via a scheduled plan workflow
-
-## Key Learning Outcomes
-
-* Implement GitHub Actions based Terraform delivery (PR plan → staging apply → production apply)
-* Use OIDC to remove static cloud credentials from CI
-* Structure environment promotion with minimal duplication
-* Apply conditional resource strategies (cost vs capability) per environment
-* Capture and surface Terraform plan & outputs for observability
-* Prepare a foundation for adding security, cost, and drift checks
-
-## Questions
-
-1. How will you enforce policy (e.g., tag, security, cost) gates in PR before merge?
-2. What criteria should trigger an automated production deployment vs a manual approval?
-3. How could you standardize backend + var file selection to avoid copy/paste in workflows?
-4. Where would you store and version workflow templates for reuse across repos?
-5. How will you surface Terraform drift or failed applies to stakeholders (chat ops, dashboards)?
-6. What additional compliance or security scanners would you insert into the PR pipeline?
-7. How could you integrate cost estimation to block unexpectedly expensive changes?
-
-## Additional Resources
-
-* Terraform Docs – Conditional Expressions: https://developer.hashicorp.com/terraform/language/expressions/conditionals
-* Terraform Docs – Input Variables & Validation: https://developer.hashicorp.com/terraform/language/values/variables
-* AzureRM Provider Docs (azurerm_linux_virtual_machine): https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/linux_virtual_machine
-* Azure AD OIDC for GitHub Actions: https://learn.microsoft.com/azure/developer/github/connect-from-azure
-* Log Analytics Workspace Overview: https://learn.microsoft.com/azure/azure-monitor/logs/log-analytics-workspace-overview
-* Azure Networking Concepts: https://learn.microsoft.com/azure/virtual-network/virtual-networks-overview
+## 16. Reference Links
+* Terraform Conditionals: https://developer.hashicorp.com/terraform/language/expressions/conditionals
+* Terraform Variables & Validation: https://developer.hashicorp.com/terraform/language/values/variables
+* AzureRM Provider (linux VM): https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/linux_virtual_machine
+* Azure AD OIDC for GitHub: https://learn.microsoft.com/azure/developer/github/connect-from-azure
+* Log Analytics Workspace: https://learn.microsoft.com/azure/azure-monitor/logs/log-analytics-workspace-overview
+* Azure Virtual Network Overview: https://learn.microsoft.com/azure/virtual-network/virtual-networks-overview
