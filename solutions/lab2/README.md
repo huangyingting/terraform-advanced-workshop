@@ -1,282 +1,190 @@
-# Lab 2: Landing Zone Foundation with Azure Verified Modules
+# Lab 2: Enterprise Landing Zone Foundation (Azure Verified Modules + ALZ)
 
-## Overview
+## 1. Learning Objectives
+By the end you can:
+- Map governance requirements to an Azure management group hierarchy
+- Deploy multi-subscription resources using provider aliases safely
+- Compose Azure Verified Modules (AVM) + ALZ provider for policy & platform
+- Explain hub & spoke / platform vs landing zone separation
+- Validate governance (policies, RBAC) and networking deployment
+- Plan next-step production hardening (remote state, CI/OIDC, version pinning)
 
-This lab demonstrates how to deploy a production-ready Azure Landing Zone foundation using Azure Verified Modules (AVM) with multi-subscription architecture. You'll learn advanced Terraform patterns including provider aliases for cross-subscription deployments, module composition techniques, and enterprise-scale governance implementation. The lab showcases how to use the ALZ (Azure Landing Zone) provider alongside Azure Verified Modules to create a complete landing zone foundation with management groups, policies, hub networking, and centralized logging across multiple Azure subscriptions.
+## 2. Conceptual Overview
+This lab stands up a minimal but production-aligned Landing Zone baseline using:
+- Management group scaffold (corp / online separation under platform + landing zones)
+- Central logging & monitoring (Log Analytics, DCRs, solutions) in the management subscription
+- Hub virtual network + firewall foundation in a dedicated connectivity subscription
+- Azure Policies + (optionally) custom roles via ALZ provider modules
+- Cross-subscription orchestration from one Terraform root using provider aliases
 
-## Prerequisites
-
-### Required Permissions
-- **Tenant Root Management Group**: Owner or User Access Administrator role
-- **Management Subscription**: Contributor or Owner role  
-- **Connectivity Subscription**: Contributor or Owner role
-- **Azure AD**: Ability to create and manage service principals (if using automated deployments)
-
-### Required Tools
-- Azure CLI v2.50+ authenticated and configured
-- Terraform v1.7+ installed
-- Git for version control
-- VS Code with Terraform extension (recommended)
-- Two separate Azure subscriptions (management and connectivity)
-
-### Architecture
+## 3. Architecture Diagram
 ```mermaid
 graph TB
-    subgraph "Azure Tenant"
-        subgraph "Management Group Hierarchy"
-            ALZ[alz<br/>Root Management Group]
-            ALZP[alz-platform]
-            ALZLZ[alz-landing-zones]
-            ALZM[alz-management]
-            ALZC[alz-connectivity]
-            ALZO[alz-online]
-            ALZCORP[alz-corp]
+    subgraph Tenant["Azure Tenant"]
+        subgraph MGs["Management Groups"]
+            root[alz]
+            platform[alz-platform]
+            mgmt[alz-management]
+            conn[alz-connectivity]
+            lz[alz-landing-zones]
+            corp[alz-corp]
+            online[alz-online]
             
-            ALZ --> ALZP
-            ALZ --> ALZLZ
-            ALZP --> ALZM
-            ALZP --> ALZC
-            ALZLZ --> ALZO
-            ALZLZ --> ALZCORP
+            root --> platform
+            platform --> mgmt
+            platform --> conn
+            root --> lz
+            lz --> corp
+            lz --> online
         end
         
-        subgraph "Management Subscription"
-            LAW[Log Analytics<br/>Workspace]
-            DCR[Data Collection<br/>Rules]
-            UAMI[User-Assigned<br/>Managed Identity]
-            MS[Monitoring<br/>Solutions]
+        subgraph MgmtSub["Management Subscription"]
+            law[("Log Analytics")]
+            dcr["Data Collection Rules"]
+            mi["Managed Identity"]
+            sol["Monitoring Solutions"]
             
-            LAW --- DCR
-            LAW --- UAMI
-            LAW --- MS
+            law --- dcr
+            law --- sol
+            law --- mi
         end
         
-        subgraph "Connectivity Subscription"
-            HVN[Hub Virtual Network]
-            AF[Azure Firewall]
-            PIP[Public IP]
-            AFS[AzureFirewallSubnet]
-            US[User Subnets]
+        subgraph ConnSub["Connectivity Subscription"]
+            hubVnet[("Hub VNet")]
+            fw["Azure Firewall"]
+            pip["Public IP"]
+            fwSubnet["AzureFirewallSubnet"]
+            spokePlace["Future Spokes"]
             
-            HVN --- AF
-            AF --- PIP
-            HVN --- AFS
-            HVN --- US
-            AF --- AFS
+            hubVnet --- fw
+            fw --- pip
+            hubVnet --- fwSubnet
+            hubVnet -.-> spokePlace
         end
         
-        ALZM -.-> LAW
-        ALZC -.-> HVN
+        mgmt -.-> MgmtSub
+        conn -.-> ConnSub
     end
-
 ```
 
-### Environment Setup
+## 4. Module & Component Matrix
+| Module / Block | Scope | Subscription | Purpose | Notes |
+|----------------|-------|--------------|---------|-------|
+| `alz_core` | Management Groups | Tenant Root | Hierarchy + Policies | Via ALZ provider & AVM refs |
+| `management` | Resource Groups, Log Analytics, DCR | Management | Central logging/monitor | Future: Sentinel, cost mgmt |
+| `hub_network` | VNet, Firewall, Subnets | Connectivity | Network hub foundation | Future: DNS, Bastion, Private Resolver |
+| Provider aliases | N/A | Multi | Direct cross-subscription create | Each module bound explicitly |
+
+## 5. Provider & Authentication Strategy
+Pattern:
+- Default `azurerm` = management subscription
+- `alias = "connectivity"` for hub networking
+- `alz` provider to pull enterprise policy/library constructs
+- Auth uses Azure CLI (interactive). For CI/CD move to OIDC Federated Identity + minimal custom role.
+
+Risk controls:
+- Explicit provider blocks passed into modules (avoid implicit default leakage)
+- Version pinning (`>=` vs `~>` for modules) — move to `~>` for stability in prod
+- (Future) Use `terraform.lock.hcl` checked into VCS for plugin immutability
+
+## 6. Environment Preparation
 ```bash
-# Verify Azure CLI authentication
-az account show
-
-# List available subscriptions
-az account list --output table
-
-# Set subscription IDs as environment variables
-export MGMT_SUB_ID="your-management-subscription-id"
-export CONN_SUB_ID="your-connectivity-subscription-id"
+export MGMT_SUB_ID="<management-sub-id>"
+export CONN_SUB_ID="<connectivity-sub-id>"
 export TF_VAR_location="southeastasia"
-```
 
-### Azure Provider Registration
-Ensure the following providers are registered in both subscriptions:
+az account set --subscription "$MGMT_SUB_ID"
+az account show -o table
+```
+Register resource providers (idempotent):
 ```bash
-az provider register --namespace Microsoft.PolicyInsights
-az provider register --namespace Microsoft.Authorization
-az provider register --namespace Microsoft.Management
-az provider register --namespace Microsoft.Network
-az provider register --namespace Microsoft.OperationalInsights
-az provider register --namespace Microsoft.Insights
-az provider register --namespace Microsoft.ManagedIdentity
+for p in Microsoft.PolicyInsights Microsoft.Authorization Microsoft.Management \
+         Microsoft.Network Microsoft.OperationalInsights Microsoft.Insights \
+         Microsoft.ManagedIdentity; do
+  az provider register --namespace $p --wait
+done
 ```
 
-## Step-by-Step Instructions
+## 7. Terraform Workflow
+| Phase | Command | Purpose | Key Output Checks |
+|-------|---------|---------|-------------------|
+| Init | `terraform init` | Download providers & modules | `Initializing provider plugins` lines |
+| Validate | `terraform validate` | Syntax & provider config sanity | Exit code 0 |
+| Plan | `terraform plan -var=management_subscription_id=$MGMT_SUB_ID -var=connectivity_subscription_id=$CONN_SUB_ID` | Execution preview | Count (~400 resources) |
+| Apply | `terraform apply ...` | Provision infra | Creation sequence logs |
+| Post Verify | Custom az CLI checks | Governance & network present | MG tree, policies, VNet |
 
-### Step 1: Review the Configuration
+Minimal command bundle:
+```bash
+terraform init
+terraform validate
+terraform plan \
+  -var=management_subscription_id=$MGMT_SUB_ID \
+  -var=connectivity_subscription_id=$CONN_SUB_ID
+terraform apply \
+  -var=management_subscription_id=$MGMT_SUB_ID \
+  -var=connectivity_subscription_id=$CONN_SUB_ID
+```
 
-1. **Navigate to the lab directory:**
-   ```bash
-   cd solutions/lab2
-   ```
+## 8. Verification Checklist
+| Area | Command / Action | Expected |
+|------|------------------|----------|
+| Management Groups | `az account management-group list -o table` | Hierarchy with alz-* groups |
+| Policies | `az policy assignment list --scope /providers/Microsoft.Management/managementGroups/alz -o table` | Multiple assignments present |
+| Log Analytics | `az monitor log-analytics workspace show --resource-group rg-alz-management --workspace-name law-alz-management --subscription $MGMT_SUB_ID` | Provisioned workspace JSON |
+| Hub VNet | `az network vnet show --name vnet-hub-primary --resource-group rg-hub-networking --subscription $CONN_SUB_ID` | Address space + subnets |
+| Firewall | Portal / `az network firewall show` | Firewall with public IP |
+| DCR | Portal or `az resource list --name *DataCollectionRule*` | Rules targeting workspace |
 
-2. **Examine the provider configuration:**
-   ```bash
-   cat providers.tf
-   ```
-   
-   Notice the multi-provider setup:
-   - Default `azurerm` provider for management subscription
-   - Aliased `azurerm.connectivity` provider for networking subscription
-   - `alz` provider for Azure Landing Zone library references
+## 9. Observability & Governance Notes
+- Central logging ready for future ingestion (VM insights, Container insights)
+- Policies may take several minutes to reflect compliance states
+- Role definitions (if any) might require re-auth to pick up permissions
 
-3. **Review the main configuration:**
-   ```bash
-   cat main.tf
-   ```
-   
-   Observe the three key modules:
-   - `alz_core`: Creates management group hierarchy and policies
-   - `management`: Deploys centralized logging and monitoring
-   - `hub_network`: Creates hub networking infrastructure
+## 10. Troubleshooting Matrix
+| Symptom | Likely Cause | Resolution |
+|---------|--------------|-----------|
+| Plan errors: provider alias not found | Module missing explicit `providers` map | Add `providers = { azurerm = azurerm, azurerm.connectivity = azurerm.connectivity }` |
+| Policies not created | Insufficient tenant root permissions | Ensure User Access Administrator / Owner at root MG |
+| Firewall missing | Connectivity subscription not set | Confirm `CONN_SUB_ID` and plan again |
+| Log Analytics missing solution add-ons | Module version mismatch | Check module version, run `terraform providers lock` |
+| Slow apply ( >30m ) | Provider registration pending | Run provider registration loop & re-apply |
+| Stale policy compliance | Evaluation delay | Wait 15–30 min, or trigger scan via portal |
 
-### Step 2: Initialize Terraform
+## 11. Scaling & Extension Ideas
+| Goal | Enhancement | Pointer |
+|------|-------------|---------|
+| Remote State | Azure Storage backend w/ state locking | Add `backend "azurerm"` block |
+| CI Pipeline | GitHub Actions OIDC plan/apply gates | Reuse patterns from Lab 4 |
+| Cost Mgmt | Add budget + alerts module | AVM cost mgmt modules / native ARM |
+| Security | Add Sentinel + Defender for Cloud enablement | Additional AVMs / policy assignments |
+| Network Expansion | Spoke VNets & peering automation | New module referencing hub outputs |
+| Policy Lifecycle | Canary -> Audit -> Deny path | Mirror patterns from Lab 3 |
+| Secrets | Key Vault + RBAC integration | Dedicated mgmt module step |
 
-1. **Initialize the working directory:**
-   ```bash
-   terraform init
-   ```
-   
-   This downloads:
-   - Azure Verified Modules from the Terraform Registry
-   - ALZ provider and its library references
-   - Required provider plugins
+## 12. Cleanup
+```bash
+terraform destroy \
+  -var=management_subscription_id=$MGMT_SUB_ID \
+  -var=connectivity_subscription_id=$CONN_SUB_ID
+```
+Confirm with `yes`. Note: Management group deletions may require manual policy detach if custom changes were made.
 
-2. **Verify initialization:**
-   ```bash
-   terraform providers
-   ```
+## 13. Review Questions
+1. Which safeguards prevent accidental deployment into the wrong subscription?  
+2. How would you introduce remote state without leaking credentials?  
+3. What triggers a full replacement vs in-place update for the hub VNet?  
+4. How do you stage policy rollouts to avoid tenant-wide disruption?  
+5. When would you split additional subscriptions (e.g., identity, security)?  
 
-### Step 3: Plan the Deployment
+## 14. Next Lab Bridge
+Proceed to Lab 3 (Governance & Policy as Code) to deepen policy lifecycle, remediation, and compliance automation using the foundation created here.
 
-1. **Generate deployment plan:**
-   ```bash
-   terraform plan \
-     -var="management_subscription_id=$MGMT_SUB_ID" \
-     -var="connectivity_subscription_id=$CONN_SUB_ID"
-   ```
-
-2. **Review the planned resources:**
-   - **Management Groups**: ALZ hierarchy (platform, landing zones, corp, online)
-   - **Policy Definitions**: Governance policies for security and compliance
-   - **Role Definitions**: Custom roles for landing zone operations
-   - **Log Analytics**: Centralized monitoring workspace
-   - **Hub Network**: Core networking with subnets and NSGs
-   - **Resource Groups**: Organizational containers
-
-   Expected: ~400+ resources to be created
-
-### Step 4: Deploy the Infrastructure
-
-1. **Apply the configuration:**
-   ```bash
-   terraform apply \
-     -var="management_subscription_id=$MGMT_SUB_ID" \
-     -var="connectivity_subscription_id=$CONN_SUB_ID"
-   ```
-
-2. **Confirm deployment:**
-   ```
-   Enter a value: yes
-   ```
-
-3. **Monitor progress:**
-   - Deployment typically takes 15-25 minutes
-   - Management groups created first
-   - Policies and roles follow
-   - Management resources deployed
-   - Networking infrastructure last
-
-### Step 5: Verify the Deployment
-
-1. **Check management group hierarchy:**
-   ```bash
-   az account management-group list --output table
-   ```
-
-2. **Verify Log Analytics workspace:**
-   ```bash
-   az monitor log-analytics workspace show \
-     --resource-group rg-alz-management \
-     --workspace-name law-alz-management \
-     --subscription $MGMT_SUB_ID
-   ```
-
-3. **Check hub networking:**
-   ```bash
-   az network vnet show \
-     --name vnet-hub-primary \
-     --resource-group rg-hub-networking \
-     --subscription $CONN_SUB_ID
-   ```
-
-4. **Review policy assignments:**
-   ```bash
-   az policy assignment list \
-     --scope "/providers/Microsoft.Management/managementGroups/alz" \
-     --output table
-   ```
-
-### Step 6: Explore the Landing Zone
-
-1. **View in Azure Portal:**
-   - Navigate to Management Groups
-   - Explore Policy assignments and compliance
-   - Review deployed resources across subscriptions
-
-2. **Test policy compliance:**
-   ```bash
-   az policy state list \
-     --management-group alz \
-     --output table
-   ```
-
-### Step 7: Clean Up
-
-When ready to remove resources:
-
-1. **Destroy the infrastructure:**
-   ```bash
-   terraform destroy \
-     -var="management_subscription_id=$MGMT_SUB_ID" \
-     -var="connectivity_subscription_id=$CONN_SUB_ID"
-   ```
-
-2. **Confirm destruction:**
-   ```
-   Enter a value: yes
-   ```
-
-## Key Learning Outcomes
-
-After completing this lab, you will have learned:
-
-- ✅ **Multi-Subscription Deployments**: How to use provider aliases to deploy resources across multiple Azure subscriptions within a single Terraform configuration
-- ✅ **Azure Verified Modules**: Understanding and implementing Microsoft's official, tested, and supported Terraform modules for Azure services
-- ✅ **Landing Zone Architecture**: Deploying enterprise-grade governance structure with management groups, policies, and role-based access control
-- ✅ **Provider Composition**: Advanced Terraform patterns for complex provider configurations and module provider assignment
-- ✅ **Azure Landing Zone (ALZ) Provider**: Leveraging specialized providers for Azure-specific governance and policy management
-- ✅ **Cross-Subscription Resource References**: Managing dependencies and data sharing between resources deployed in different subscriptions
-- ✅ **Enterprise Governance**: Implementing security policies, compliance controls, and centralized logging at scale
-- ✅ **Hub-and-Spoke Networking**: Deploying foundational network architecture for enterprise workloads
-
-## Questions
-
-Consider these questions as you reflect on this lab:
-
-1. **Subscription Strategy**: How would you decide which resources belong in the management subscription versus the connectivity subscription? What factors influence subscription boundaries in enterprise environments?
-
-2. **Policy Governance**: The lab deploys numerous Azure policies automatically. How would you approach customizing these policies for different compliance requirements (HIPAA, SOC 2, ISO 27001) while maintaining operational efficiency?
-
-3. **Module Versioning**: You used version constraints like `~> 0.13` for the Azure Verified Modules. How would you develop a strategy for keeping modules updated while maintaining stability in production environments?
-
-4. **Provider Authentication**: This lab uses Azure CLI authentication. How would you adapt this pattern for automated CI/CD pipelines while maintaining security best practices and least-privilege access?
-
-5. **Scaling Considerations**: As your organization grows, how would you extend this landing zone pattern to support multiple business units, regions, or environment types (dev/staging/prod) without configuration duplication?
-
-6. **State Management**: The lab uses local state for simplicity. How would you implement this pattern with remote state management, considering the cross-subscription nature and potential team collaboration needs?
-
-## Additional Resources
-
-- [Azure Landing Zones Documentation](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)
-- [Azure Verified Modules](https://azure.github.io/Azure-Verified-Modules/)
-- [Cloud Adoption Framework](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/)
-- [Azure Policy Documentation](https://docs.microsoft.com/en-us/azure/governance/policy/)
-- [Terraform Provider Aliases](https://www.terraform.io/docs/language/providers/configuration.html#alias-multiple-provider-configurations)
-- [Azure Landing Zone ALZ Provider](https://registry.terraform.io/providers/Azure/alz/latest/docs)
+## 15. References
+- Azure Landing Zones: https://learn.microsoft.com/azure/cloud-adoption-framework/ready/landing-zone/
+- Azure Verified Modules: https://azure.github.io/Azure-Verified-Modules/
+- ALZ Provider Registry: https://registry.terraform.io/providers/Azure/alz/latest/docs
+- Terraform Provider Aliases: https://developer.hashicorp.com/terraform/language/providers/configuration#alias-multiple-provider-configurations
+- Azure Policy: https://learn.microsoft.com/azure/governance/policy/
+- Management Groups: https://learn.microsoft.com/azure/governance/management-groups/
+- Terraform CLI Docs: https://developer.hashicorp.com/terraform/cli

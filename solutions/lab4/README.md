@@ -1,6 +1,6 @@
 ## Lab 4: Secure Multi-Environment Terraform Delivery with GitHub Actions
 
-One-line summary: Build a PR → staging → production Terraform pipeline using GitHub Actions + Azure OIDC (no static credentials) with environment separation, promotion controls, and extensibility hooks.
+Build a PR → staging → production Terraform pipeline using GitHub Actions + Azure OIDC (no static credentials) with environment separation, promotion controls, and extensibility hooks.
 
 ---
 
@@ -31,6 +31,7 @@ graph TB
     subgraph "GitHub Repository"
         GR[Repository Code]
     end
+    
     subgraph "GitHub Actions Workflows"
         subgraph "PR Workflow"
             PR1[Checkout]
@@ -41,6 +42,7 @@ graph TB
             PR6[PR Comment]
             PR1 --> PR2 --> PR3 --> PR4 --> PR5 --> PR6
         end
+        
         subgraph "Deploy Workflow"
             subgraph "Staging Job"
                 S1[Checkout & Setup]
@@ -49,6 +51,7 @@ graph TB
                 S4[Apply]
                 S1 --> S2 --> S3 --> S4
             end
+            
             subgraph "Production Job"
                 PA[Manual Approval]
                 P1[Checkout & Setup]
@@ -57,37 +60,47 @@ graph TB
                 P4[Apply]
                 PA --> P1 --> P2 --> P3 --> P4
             end
+            
             S4 --> PA
         end
     end
+    
     subgraph "Microsoft Entra ID"
-        AR[App Registration\n github-actions-terraform]
-        FC1[Federated Cred: main]
-        FC2[Federated Cred: PR]
-        FC3[Federated Cred: environments]
-        SP[Service Principal - Contributor]
+        AR["App Registration<br/>github-actions-terraform"]
+        FC1["Federated Cred: main"]
+        FC2["Federated Cred: PR"]
+        FC3["Federated Cred: environments"]
+        SP["Service Principal - Contributor"]
         AR --- FC1
         AR --- FC2
         AR --- FC3
         AR --- SP
     end
+    
     subgraph "Azure Subscription"
         subgraph "Staging"
             SRG[rg-terraform-staging]
             SSA[Storage acct backend]
             SAR[App Resources]
         end
+        
         subgraph "Production"
             PRG[rg-terraform-production]
             PSA[Storage acct backend]
             PAR[App Resources]
         end
     end
+    
+    %% Workflow triggers
     GR -->|pull_request| PR1
     GR -->|push main| S1
+    
+    %% Authentication connections
     PR2 -.-> SP
     S2 -.-> SP
     P2 -.-> SP
+    
+    %% Backend state connections
     S4 -.-> SSA
     P4 -.-> PSA
 ```

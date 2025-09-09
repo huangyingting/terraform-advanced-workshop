@@ -1,158 +1,139 @@
-# Lab 3: Advanced Policy as Code & Remediation
+## Lab 3 – Advanced Azure Policy as Code & Remediation
 
-## Overview
-This lab implements Azure Policy as Code using Terraform to provision:
-* Three custom policy definitions (modify, deny, deployIfNotExists)
-* A custom policy initiative (policy set definition)
-* A resource-group scoped policy assignment (SystemAssigned identity)
-* Role assignments granting least privileges for remediation at RG scope
-* Two remediation tasks (tag + AMA) implemented with `azapi_resource`
-* A deliberately non‑compliant Linux VM to trigger modify and deployIfNotExists, and highlight a deny scenario
+Define custom Azure Policies + initiative, assign them with least-privilege identity at RG scope, trigger modify / deny / deployIfNotExists effects, and observe remediation lifecycle using Terraform + AzAPI.
 
-You also see optional dynamic creation of a Log Analytics workspace, how to scope policy narrowly (RG instead of subscription), and how to use AzAPI where the AzureRM provider lacks first‑class remediation support.
+---
 
-### Architecture
+## 1. Learning Objectives
+* Author custom modify, deny, deployIfNotExists policies
+* Bundle policies into a reusable initiative (set definition)
+* Assign at minimal scope (resource group) with System Assigned Managed Identity
+* Grant least privilege for remediation (targeted role assignments)
+* Orchestrate remediation tasks (tag + AMA) via AzAPI where needed
+* Safely validate, observe compliance states, and roll back
+
+## 2. Architecture & Flow
 ```mermaid
-graph TB
-    subgraph "Azure Subscription"
-        subgraph "Policy Framework"
-            PD1[Policy Definition:<br/>Require Tag<br/>Effect: modify]
-            PD2[Policy Definition:<br/>Disk Encryption<br/>Effect: deny]
-            PD3[Policy Definition:<br/>Deploy AMA<br/>Effect: deployIfNotExists]
-            
-            PI[Policy Initiative:<br/>Enterprise Governance]
-            PA[Policy Assignment:<br/>Subscription Scope]
-            MI[Managed Identity:<br/>System Assigned]
-            
-            PD1 --> PI
-            PD2 --> PI
-            PD3 --> PI
-            PI --> PA
-            PA --> MI
-        end
-        
-        subgraph "Supporting Infrastructure"
-            LAW[Log Analytics<br/>Workspace]
-            RG[Resource Group:<br/>lab3-rg]
-            VM[Test VM:<br/>vm-policy-test]
-            
-            LAW -.-> PD3
-            RG --- VM
-        end
-        
-        subgraph "Remediation Tasks"
-            RT1[Tag Remediation<br/>azurerm_policy_remediation]
-            RT2[AMA Remediation<br/>azapi_resource]
-            
-            PA --> RT1
-            PA --> RT2
-        end
-        
-        MI --> LAW
-        MI --> RG
-        RT1 --> VM
-        RT2 --> VM
+graph TD
+  subgraph Subscription
+    subgraph Policy_Framework
+      PD1[Require Tag<br/>Effect: modify]
+      PD2[Disk Encryption<br/>Effect: deny]
+      PD3[Deploy AMA<br/>Effect: deployIfNotExists]
+      PI[Policy Initiative]
+      PA[Policy Assignment RG scope]
+      MI[Managed Identity]
+      PD1 --> PI
+      PD2 --> PI
+      PD3 --> PI
+      PI --> PA
+      PA --> MI
     end
+    subgraph Infrastructure
+      RG[lab3-rg]
+      VM[vm-policy-test]
+      LAW[Log Analytics Workspace]
+      RG --- VM
+    end
+    subgraph Remediation
+      RT1[Tag Remediation]
+      RT2[AMA Remediation]
+    end
+  end
+  
+  %% Cross-subgraph connections
+  PA --> RG
+  PA --> RT1
+  PA --> RT2
+  MI --> RT1
+  MI --> RT2
+  RT1 --> VM
+  RT2 --> VM
+  PD3 -.-> LAW
+  RT2 -.-> LAW
 ```
 
-## Prerequisites
-- Azure subscription with Policy Contributor or Owner role
-- Azure CLI v2.50+ logged in (az account show succeeds)
-- Terraform v1.7+ installed
-- jq installed (used by prepare script)
-- Strong admin password you will supply (or script will generate one) meeting Azure complexity (≥12 chars, mix of upper/lower/digit/symbol)
-- Registered resource providers:
-  - Microsoft.PolicyInsights
-  - Microsoft.Authorization
-  - Microsoft.Compute
-  - Microsoft.Network
-  - Microsoft.OperationalInsights
-  - Microsoft.Insights
-  - Microsoft.ManagedIdentity
+Flow legend:
+1. Definitions created → initiative → assignment
+2. Assignment identity granted roles
+3. Evaluation runs, non-compliance detected
+4. Modify adds tags, deployIfNotExists deploys AMA, deny blocks insecure changes
+5. Remediation tasks track progress
 
-(Optional) Run helper script to validate and bootstrap:
+## 3. Policy Component Matrix
+| Ref | Name (Display) | Effect | Trigger Condition (Simplified) | Action / Outcome | Remediation Mode |
+|-----|----------------|--------|--------------------------------|------------------|------------------|
+| PD1 | Require Tag | modify | Resource missing required tag | Tag inserted via modify operation | Automatic |
+| PD2 | Enforce Disk Encryption | deny | OS disk not encrypted per policy rules | Deployment blocked | Preventive |
+| PD3 | Deploy AMA | deployIfNotExists | VM missing AMA extension | AMA extension deployed | Corrective |
+
+## 4. Identity & Access Model
+| Identity | Role | Scope | Purpose |
+|----------|------|-------|---------|
+| Assignment System MI | Contributor | RG | Create extensions / remediate tags |
+| Assignment System MI | Virtual Machine Contributor | RG | Operate VM extension deployment with reduced privileges |
+
+Principle: start with narrowest scope (RG) then elevate cautiously (MG/Subscription) after validation.
+
+## 5. Prerequisites
+| Requirement | Detail |
+|-------------|--------|
+| Azure Roles | Policy Contributor (or Owner) + ability to assign roles at RG |
+| CLI | Azure CLI ≥ 2.50, logged in (`az account show`) |
+| Terraform | ≥ 1.7 |
+| Tools | jq, bash |
+| Password | Strong admin password or `TF_VAR_vm_admin_password` exported |
+| Providers Registered | Microsoft.PolicyInsights, Authorization, Compute, Network, OperationalInsights, Insights, ManagedIdentity |
+
+Bootstrap (optional):
 ```bash
 cd solutions/lab3
 chmod +x prepare.sh
 ./prepare.sh
 ```
 
-## Step-by-Step Instructions
-
-### 1. Review & (Optionally) Customize Variables
-Default values live in `variables.tf`. To override, create `terraform.tfvars`:
+## 6. Variable & Input Strategy
+Override defaults by creating `terraform.tfvars`:
 ```hcl
-location             = "southeastasia"
-resource_group_name  = "lab3-rg"
-tag_name             = "cost-center"
-tag_value            = "lab3"
-vm_admin_username    = "azureuser"
-vm_admin_password    = "ChangeM3!" # supply a strong password or export TF_VAR_vm_admin_password
-# log_analytics_workspace_id = "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.OperationalInsights/workspaces/<name>" # (optional reuse)
+location            = "southeastasia"
+resource_group_name = "lab3-rg"
+tag_name            = "cost-center"
+tag_value           = "lab3"
+vm_admin_username   = "azureuser"
+vm_admin_password   = "ChangeM3!" # or export TF_VAR_vm_admin_password
+# log_analytics_workspace_id = "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.OperationalInsights/workspaces/<name>"
 ```
-If `log_analytics_workspace_id` is not supplied, the configuration creates `lab3-policy-logs-rg` and `lab3-law-policy-governance` automatically.
+If no workspace ID provided, one is created automatically.
 
-### 2. Initialize Terraform
-```bash
-terraform init
-```
-Downloads AzureRM (~>3.100) and AzAPI (~>1.9) providers.
+## 7. Deployment Phases
+| Phase | Command / Action | Goal | Key Notes |
+|-------|------------------|------|-----------|
+| 1 | `terraform init` | Provider setup | AzureRM + AzAPI |
+| 2 | `terraform plan` | Preview resources | Ensure definitions correct |
+| 3 | `terraform apply -auto-approve` | Create & assign policies | Evaluation may take minutes |
+| 4 | Manual CLI checks | Validate assignment & MI | Confirm roles, identity principalId |
+| 5 | Trigger non-compliance | Observe modify/deny/deployIfNotExists | Create extra VM / NSG |
+| 6 | Optional remediation run | Force remediation if needed | `az policy remediation create` |
 
-### 3. Plan Deployment
-```bash
-terraform plan
-```
-Confirm the plan shows (approximate):
-Expected resources:
-* 3 x `azurerm_policy_definition`
-* 1 x `azurerm_policy_set_definition`
-* 1 x `azurerm_resource_group_policy_assignment` (SystemAssigned identity)
-* 2 x `azurerm_role_assignment` (Contributor + VM Contributor) at RG scope
-* 2 x `azapi_resource` (remediation objects: tag + AMA) – optional if enabled
-* Optional Log Analytics RG + workspace (if you didn’t supply one)
-* Test RG + networking + Linux VM
-
-### 4. Apply Deployment
-```bash
-terraform apply -auto-approve
-```
-Notes:
-- Policy assignment + initial compliance evaluation can take several minutes.
-- Remediation tasks run after evaluation; status may remain "InProgress" briefly.
-- The modify effect will add the required tag to resources missing it inside the RG.
-
-### 5. Verify Core Artifacts
+## 8. Verification Commands (Grouped)
 ```bash
 terraform output
 RG=$(terraform output -raw test_resource_group_name)
 az policy assignment list --resource-group "$RG" -o table | grep enterprise-governance-assignment || true
 az policy definition list --query "[?policyType=='Custom' && (contains(name,'require-') || contains(name,'deploy-ama'))]" -o table
-```
-Check managed identity role assignments:
-```bash
 ASSIGN_ID=$(terraform output -raw policy_assignment_id)
 PRINCIPAL_ID=$(az policy assignment show --name enterprise-governance-assignment --resource-group "$RG" --query identity.principalId -o tsv)
 az role assignment list --assignee "$PRINCIPAL_ID" --scope $(az group show -n "$RG" --query id -o tsv) -o table
-```
-
-### 6. Inspect Remediation
-```bash
 az policy remediation list --resource-group "$RG" -o table
-az policy state list --resource-group "$RG" --top 50 -o table
-```
-Check VM tag, AMA extension, and OS disk encryption status:
-```bash
-RG=$(terraform output -raw test_resource_group_name)
+az policy state list --resource-group "$RG" --top 20 -o table
 az vm show --name vm-policy-test --resource-group $RG --query tags
 az vm extension list --vm-name vm-policy-test --resource-group $RG --query "[?name=='AzureMonitorLinuxAgent']"
 OSDISK_ID=$(az vm show --name vm-policy-test --resource-group $RG --query "storageProfile.osDisk.managedDisk.id" -o tsv)
 az disk show --ids $OSDISK_ID --query "encryption.type"
-# (Optional) Check encryption at host setting
-az vm show --name vm-policy-test --resource-group $RG --query "securityProfile.encryptionAtHost"
 ```
 
-### 7. Test Policy Effects
-Attempt non-compliant resource (tag auto-added by modify effect):
+## 9. Testing Policy Effects
+Create additional non-compliant resources:
 ```bash
 RG=$(terraform output -raw test_resource_group_name)
 az network nsg create -g $RG -n nsg-extra-test --tags Purpose=AdHoc
@@ -165,10 +146,12 @@ az vm create \
   --size Standard_B1s \
   --tags Purpose=AdHoc
 ```
+Expected:
+* Tag policy modifies (inserts required tag) where missing
+* Disk encryption policy denies non-compliant creation attempts
+* AMA policy deploys extension automatically for managed VM
 
-As you attempt to create a VM without the required disk encryption, the disk encryption policy's deny effect will block the deployment (Azure CLI will return a Policy violation error and the VM will not be created).
-
-### 8. (Optional) Trigger Manual Remediation
+## 10. Manual Remediation (Optional)
 ```bash
 ASSIGN_ID=$(terraform output -raw policy_assignment_id)
 RG=$(terraform output -raw test_resource_group_name)
@@ -179,49 +162,62 @@ az policy remediation create \
   --definition-reference-id RequireTag
 ```
 
-### 9. View Compliance in Portal
-Open the Policy blade:
-```bash
-echo "https://portal.azure.com/#blade/Microsoft_Azure_Policy/PolicyComplianceBlade"
-```
-Locate initiative “Enterprise Governance Initiative”.
+## 11. Governance Rollout Patterns
+| Pattern | Purpose | Steps |
+|---------|---------|-------|
+| Canary RG | Test effects safely | Apply to single RG → monitor → expand |
+| Gradual Scope Expansion | Move to subscription / MG | Promote initiative scope once compliant |
+| Soft Launch (Audit) | Measure impact before deny | Start with `audit` effect variant, then switch to `deny` |
+| Exemptions | Allow specific workloads | Use `az policy exemption create` with expiry |
+| Staged Remediation | Avoid load spikes | Batch resources or limit concurrency |
 
-### 10. Destroy (Cleanup)
-Destroy in one step:
+## 12. Troubleshooting
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| No remediation appears | Evaluation not finished | Wait or check Policy Insights states |
+| Modify effect not tagging | Tag name mismatch | Confirm variable values & definition rule |
+| AMA extension absent | MI lacks rights or delay | Ensure role assignments propagated; re-check after minutes |
+| Deny not blocking | Wrong scope or rule logic | Confirm assignment scope + condition |
+| Role assignment errors | Principal not yet provisioned | Add small delay or re-run apply |
+| Plan wants to recreate policy | Hash changed (definition edits) | Use versioned definitions & review diffs |
+
+## 13. Cleanup
 ```bash
 terraform destroy -auto-approve
 ```
-Verify removal:
+If RG deletion manual:
 ```bash
 RG=$(terraform output -raw test_resource_group_name 2>/dev/null || echo none)
-az policy assignment list --resource-group $RG --query "[?name=='enterprise-governance-assignment']" || true
-az policy definition list --query "[?policyType=='Custom' && contains(displayName,'Governance')]"
+az group delete -n $RG --yes --no-wait || true
 ```
 
-If the resource group is already gone, the RG-scoped policy assignment is implicitly removed.
+## 14. Key Learning Outcomes
+* Full lifecycle: definitions → initiative → assignment → remediation
+* Least-privilege managed identity pattern
+* Cohesive use of modify / deny / deployIfNotExists
+* Practical remediation monitoring & manual triggers
+* Safe rollout strategies for production governance
 
-## Key Learning Outcomes
-* Policy as Code lifecycle with Terraform (definitions → initiative → scoped assignment → remediation)
-* Narrow scoping (RG vs subscription) to reduce blast radius during experimentation
-* Implementing modify, deny & deployIfNotExists effects cohesively
-* Using System Assigned Managed Identity with least-privilege RG role assignments
-* Leveraging AzAPI for remediation artifacts not yet first‑class in AzureRM
-* Parameterizing tag + workspace inputs for reusable governance patterns
-* Validating compliance & remediation via CLI and Portal
-* Ordering infrastructure before policy to observe remediation behavior
+## 15. Extension Ideas
+* Management group scope promotion
+* Add built-in regulatory initiative layering
+* Add OPA/Conftest evaluation of plan JSON pre-apply
+* Automatic exemption expiry audit script
+* Cost / tag compliance reporting dashboard
 
-## Questions
-1. How would you extend this initiative to include regulatory (e.g., CIS, NIST) built‑in policies without overwhelming remediation capacity?
-2. What strategy ensures safe rollout of deny policies in production environments (staging, exemptions, what‑if)?
-3. How would you adapt this pattern for multiple subscriptions at management group scope while maintaining least privilege?
-4. What telemetry (logs, metrics) would you capture to measure governance effectiveness over time?
-5. How could you decouple remediation cadence from policy assignment to reduce blast radius?
-6. When would you choose deployIfNotExists vs remediation, and how do you govern drift afterwards?
+## 16. Review Questions
+1. How do you stage deny policies to avoid outages?  
+2. When would deployIfNotExists be preferable to a custom remediation script?  
+3. How can you detect stalled remediation tasks automatically?  
+4. What criteria drive promotion from RG to MG scope?  
+5. How could you integrate policy compliance metrics into CI gates?  
+6. How do you prevent policy sprawl and overlapping definitions?  
 
-## Additional Resources
-- Azure Policy Concepts: https://learn.microsoft.com/azure/governance/policy/concepts
-- Terraform AzureRM Provider Policy Docs: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/policy_definition
-- AzAPI Provider: https://registry.terraform.io/providers/Azure/azapi/latest
-- Policy Remediation Guidance: https://learn.microsoft.com/azure/governance/policy/how-to/remediate-resources
-- Effects Reference (deny/modify/deployIfNotExists): https://learn.microsoft.com/azure/governance/policy/concepts/effects
-- Azure Monitor Agent Overview: https://learn.microsoft.com/azure/azure-monitor/agents/azure-monitor-agent-overview
+## 17. Reference Links
+* Azure Policy Concepts: https://learn.microsoft.com/azure/governance/policy/concepts
+* Terraform AzureRM Policy Definition: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/policy_definition
+* AzAPI Provider: https://registry.terraform.io/providers/Azure/azapi/latest
+* Policy Remediation Guidance: https://learn.microsoft.com/azure/governance/policy/how-to/remediate-resources
+* Effects Reference: https://learn.microsoft.com/azure/governance/policy/concepts/effects
+* Azure Monitor Agent: https://learn.microsoft.com/azure/azure-monitor/agents/azure-monitor-agent-overview
+

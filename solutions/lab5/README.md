@@ -1,95 +1,201 @@
-# Lab 5 – Terraform Quality Gate, Azure OIDC, and Terratest
+## Lab 5 – Terraform Quality Gate, Azure OIDC, and Terratest
 
-## Overview
-This lab demonstrates a practical Terraform delivery pipeline featuring:
-- GitHub Actions OpenID Connect (OIDC) federation to Azure (no static secrets)
-- Layered quality gate: fmt, validate, TFLint, Checkov (security / misconfig scanning)
-- Severity-based enforcement (configurable threshold)
-- Integration tests with Terratest (Go) against Azure using ephemeral auth
-- Environment-scoped federated identity + repo environment secrets
+Add a layered quality + security + test pipeline for Terraform modules using Azure OIDC (no static secrets) and Terratest integration tests.
 
-You will configure Azure + GitHub, observe pipeline behavior, and tune quality criteria.
+---
 
-## Prerequisites
-- Azure subscription Owner or User Access Administrator (for role assignment)
-- Tools installed locally:
-  - Azure CLI (az) logged in: az login
-  - GitHub CLI (gh) authenticated: gh auth login
-  - Bash shell
-- Repository cloned locally
-- Environment variables (export before running script):
-  - GITHUB_REPO="your-org/your-repo"
-  - (Optional) APP_NAME="custom-app-reg-name" (defaults to github-terraform-cicd)
-- Network access to Azure AD + GitHub APIs
-- Permissions to create:
-  - App registration + service principal
-  - Federated credentials
-  - Role assignment (Contributor)
-  - GitHub environment + secrets
+## 1. Learning Objectives
+* Authenticate to Azure with GitHub OIDC (no client secret)
+* Enforce style, validation, lint, and security scanning before integration tests
+* Gate merges by configurable vulnerability severity
+* Run Terratest to provision, verify, and tear down Azure infra
+* Tune thresholds and extend to more environments safely
 
-## Step-by-Step Instructions
-1. Clone and position  
-   git clone <repo>  
-   cd terraform-advanced-workshop/solutions/lab5
-2. Set required environment variable  
-   export GITHUB_REPO="org/repo"
-3. (Optional) Override app name  
-   export APP_NAME="lab5-oidc-app"
-4. Run the OIDC bootstrap script  
-   ./prepare.sh  
-   What it does:  
-   - Creates (or reuses) Azure AD App Registration + Service Principal  
-   - Adds federated credential (subject: repo:ORG/REPO:environment:development)  
-   - Assigns Contributor at subscription scope  
-   - Ensures GitHub environment 'development' exists and injects secrets:  
-     AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
-5. Verify Azure objects (optional)  
-   az ad app show --id "$APP_NAME" --query "{appId:appId, displayName:displayName}"  
-   az role assignment list --assignee "$APP_ID" --query "[].roleDefinitionName"
-6. Commit / push any changes to solutions/lab5/** (branches: main or develop) to trigger the workflow.
-7. Observe workflow jobs (GitHub Actions → Lab 5 Terraform Quality Gate & Integration Tests):  
-   Job: quality-gate  
-   - terraform fmt -check (module + example)  
-   - terraform init / validate (module + example)  
-   - TFLint (module, example, a failing sample folder non-blocking)  
-   - Checkov security scan -> JUnit + SARIF artifacts uploaded  
-   - Severity gating: fails if any finding >= CHECKOV_SEVERITY_THRESHOLD (default MEDIUM)  
-   Job: terratest (only on push/workflow_dispatch, not PR)  
-   - go mod tidy / download  
-   - go test -v -timeout 30m (launches infra, validates, tears down)
-8. Adjust security threshold (optional)  
-   Edit .github/workflows/lab5-ci.yml: CHECKOV_SEVERITY_THRESHOLD: HIGH (example)  
-   Commit → observe pass/fail changes.
-9. Add a deliberate misconfiguration (e.g., open firewall) → confirm Checkov blocks at threshold.
-10. Explore artifacts  
-    - Actions → specific run → Artifacts → checkov-results (download SARIF, view counts in summary)
-11. Iterate: fix issues, push again until both jobs pass.
-12. (Optional) Add another federated environment (e.g., staging) by replicating the loop in prepare.sh.
+## 2. Pipeline Flow Overview
+```mermaid
+flowchart LR
+   A[Commit / PR] --> B[Quality Gate Job]
+   B -->|Pass| C{On push main / manual?}
+   B -->|Fail| F[Stop]
+   C -->|Yes| D[Terratest Job]
+   C -->|No| G[End]
+   D -->|Success| E[Destroy Test Infra]
+   D -->|Fail| H[Destroy Test Infra]
+   E --> I[Report Results - Success]
+   H --> J[Report Results - Failure]
+```
+Quality Gate layers (sequential): fmt → validate → TFLint → Checkov (severity gate). Terratest runs only if the quality gate passes (and only on push/workflow_dispatch, not on PR if so configured).
 
-## Key Learning Outcomes
-- Implement GitHub → Azure OIDC without client secrets
-- Enforce Terraform style, validation, linting early
-- Apply security-as-code with Checkov + severity gating
-- Structure multi-folder (modules/examples) validation
-- Run Terratest for integration confidence
-- Interpret SARIF outputs and summarize security posture
-- Parameterize pipeline (versions, thresholds) via env vars
+## 3. What This Lab Focuses On
+| Area | Tool / Mechanism | Purpose | Failure Impact |
+|------|------------------|---------|----------------|
+| Formatting | terraform fmt -check | Consistent style | Usually blocks until fixed |
+| Validation | terraform validate | Syntax & internal refs | Hard fail |
+| Lint | TFLint | Best practices / provider issues | Hard fail (configurable) |
+| Security / Misconfig | Checkov | Policy & misconfig scan | Severity‑based fail |
+| Integration | Terratest (Go) | Provision + assertions + destroy | Hard fail on test errors |
+| Auth | GitHub OIDC → Azure | Ephemeral credentials | Fail prevents any cloud access |
 
-## Questions
-1. Which failures should block delivery: style, lint, security, or tests—and why?  
-2. How would you shift from subscription-wide Contributor to least privilege?  
-3. What is the risk of setting CHECKOV_SEVERITY_THRESHOLD=CRITICAL?  
-4. How could you parallelize lint + security to reduce runtime?  
-5. How would you extend Terratest to validate idempotency or drift?  
-6. What metrics would you surface to leadership from this pipeline?  
-7. How might adding a policy-as-code layer (OPA/Conftest) change the workflow?
+## 4. Repository Layout (Lab 5)
+```
+solutions/lab5/
+   README.md
+   prepare.sh
+   modules/
+      web_app/
+         main.tf
+         variables.tf
+         outputs.tf
+         versions.tf
+   examples/
+      basic/
+         main.tf
+   tests/
+      go.mod
+      web_app_test.go
+   tflint-fails/
+      main.tf
+      version.tf
+```
 
-## Additional Resources
-- Terraform CLI docs: https://developer.hashicorp.com/terraform/cli
-- TFLint: https://github.com/terraform-linters/tflint
-- Checkov policies: https://www.checkov.io
-- Terratest: https://terratest.gruntwork.io
-- GitHub OIDC guide: https://docs.github.com/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect
-- Azure federated credentials: https://learn.microsoft.com/azure/active-directory/develop/workload-identity-federation
-- SARIF viewer (VS Code extension) for local analysis
+## 5. Prerequisites
+| Requirement | Details |
+|-------------|---------|
+| Azure Role | Owner or User Access Administrator (to assign Contributor) |
+| Local Tools | az, gh, bash, terraform, go (for Terratest) |
+| Auth | `az login`, `gh auth login` |
+| Env Vars | `GITHUB_REPO=org/repo`, optional `APP_NAME` (default github-terraform-cicd) |
+| Network | Access to Azure AD + GitHub APIs |
+| Permissions | Create App Registration, Federated Credential, Role Assignment, GitHub env + secrets |
 
+## 6. Quick Start
+```bash
+git clone <repo>
+cd terraform-advanced-workshop/solutions/lab5
+export GITHUB_REPO="<org>/<repo>"
+# optional
+export APP_NAME="lab5-oidc-app"
+./prepare.sh
+```
+Script actions:
+* Create / reuse App Registration + Service Principal
+* Add federated credential (subject: repo:ORG/REPO:environment:development)
+* Assign Contributor on subscription
+* Ensure GitHub environment `development` with secrets: AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID
+
+Verify (optional):
+```bash
+az ad app show --id "$APP_NAME" --query '{appId:appId, displayName:displayName}'
+az role assignment list --assignee "$(az ad app show --id "$APP_NAME" --query appId -o tsv)" --query '[].roleDefinitionName'
+```
+
+## 7. Detailed Pipeline Stages
+### 7.1 Quality Gate Job
+Order of operations:
+1. terraform fmt -check (module + example)
+2. terraform init / validate (module + example)
+3. TFLint (module + example + separate failing sample dir for illustration)
+4. Checkov scan (produces SARIF + JUnit artifacts)
+5. Severity evaluation → fail if any >= threshold
+
+Artifacts: `checkov-results` (SARIF/JUnit), potential summary markdown.
+
+### 7.2 Severity Gating Logic
+Pseudo-rule:
+```
+if highestFindingSeverity >= CHECKOV_SEVERITY_THRESHOLD then fail
+```
+Common thresholds:
+| Threshold | Blocks Severities |
+|-----------|------------------|
+| LOW | LOW+ |
+| MEDIUM | MEDIUM+ |
+| HIGH | HIGH+ |
+| CRITICAL | CRITICAL only |
+
+### 7.3 Terratest Job
+Runs after quality gate (and only on configured triggers):
+* go mod tidy / download
+* go test -v -timeout 30m ./tests
+* Test provisions infra via Terraform, asserts outputs, then destroys
+* Failing test ensures resources are still cleaned via deferred destroy
+
+## 8. Configuration & Tuning
+| Variable | Location | Purpose | Example |
+|----------|----------|---------|---------|
+| GITHUB_REPO | shell env | Identify repo for bootstrap | org/repo |
+| APP_NAME | shell env | Override app registration name | lab5-oidc-app |
+| CHECKOV_SEVERITY_THRESHOLD | workflow env | Set fail threshold | MEDIUM |
+| TF_LOG | optional env | Terraform debug logging | INFO |
+| GO_TEST_TIMEOUT | workflow param | Adjust test runtime limit | 30m |
+
+Add new federated environment: replicate credential creation in `prepare.sh` with subject pattern `repo:ORG/REPO:environment:<name>` and create GitHub environment `<name>` with same secrets.
+
+## 9. Federated Identity & Security Model
+| Aspect | Current | Improvement Path |
+|--------|---------|------------------|
+| Scope | Subscription Contributor | Narrow to RG or specific roles |
+| Credential Lifetime | Ephemeral OIDC token | Maintain minimal audience + claims |
+| Secret Storage | None (OIDC only) | Keep it secretless; audit usage |
+| Policy | Reactive (Checkov scan) | Add proactive OPA / Conftest gate |
+
+## 10. Local Development
+Format & lint locally:
+```bash
+terraform -chdir=modules/web_app fmt -check
+terraform -chdir=modules/web_app init -backend=false
+terraform -chdir=modules/web_app validate
+tflint modules/web_app
+```
+Run example plan:
+```bash
+terraform -chdir=examples/basic init -backend=false
+terraform -chdir=examples/basic plan
+```
+Run Terratest locally (requires Azure auth):
+```bash
+cd tests
+go test -v -timeout 30m
+```
+
+## 11. Troubleshooting
+| Symptom | Likely Cause | Resolution |
+|---------|--------------|------------|
+| OIDC auth failure | Federated subject mismatch | Re-run bootstrap; verify subject string in portal |
+| Checkov always fails | Threshold too low or real findings | Raise threshold or remediate findings |
+| Terratest timeout | Long Azure provisioning | Increase timeout or optimize resources |
+| Lint warnings ignored | TFLint not configured to fail | Enable failure on warnings via config |
+| Residual resources after fail | Destroy step skipped | Run `terraform destroy` manually in test workspace |
+
+## 12. Extending the Pipeline
+* Parallelize lint + security using matrix or separate jobs
+* Add tfsec or Trivy config scanning for redundancy
+* Add Infracost for cost delta gating
+* OPA/Conftest evaluation on `terraform plan -json` output
+* Nightly drift detection plan + notification (Slack/Teams)
+* Upload test coverage of helper Go code if expanded
+
+## 13. Cleanup
+No persistent infra should remain after Terratest. If debugging leaves resources:
+```bash
+terraform -chdir=tests/fixtures/web_app destroy
+```
+Or manually locate RG created by tests (naming pattern inside test code) and remove via Azure CLI.
+
+## 14. Review Questions
+1. Which pipeline stages are most cost‑effective to fail early? Why?  
+2. How would you refactor to least privilege (role + scope)?  
+3. How do you prevent “severity inflation” (ignoring too many warnings)?  
+4. What’s the tradeoff of running Terratest on every PR vs only main?  
+5. How could you persist sanitized plan JSON for external policy evaluation?  
+6. Which metrics (MTTR for failures, vulnerability trend) would you dashboard?  
+7. How would you enforce time-boxed remediation for HIGH findings?  
+
+## 15. Reference Links
+* Terraform CLI: https://developer.hashicorp.com/terraform/cli
+* TFLint: https://github.com/terraform-linters/tflint
+* Checkov: https://www.checkov.io
+* Terratest: https://terratest.gruntwork.io
+* GitHub OIDC hardening: https://docs.github.com/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect
+* Azure federated credentials: https://learn.microsoft.com/azure/active-directory/develop/workload-identity-federation
+* SARIF Viewer VS Code: https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer
