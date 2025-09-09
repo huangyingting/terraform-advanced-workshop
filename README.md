@@ -1,41 +1,34 @@
 # Terraform Advanced Workshop
 
-This lab series maps directly to five advanced Terraform + Azure focus areas: remote state & layered architecture, landing zone foundation with AVM, advanced policy & remediation, production-grade GitHub Actions CI/CD, and Terraform quality gates with testing.
+This challenge series maps directly to six advanced Terraform + Azure focus areas: remote state & layered deployment, landing zone foundation with AVM, advanced policy & remediation, production-grade GitHub Actions CI/CD, Terraform quality gates with testing, and import of existing resources.
 
-## Labs
-| Lab | Title | Core Focus | Key Azure Services | GitHub / Tooling Focus |
+## Challenges
+| Challenge | Title | Core Focus | Key Azure Services | GitHub / Tooling Focus |
 | --- | ----- | ---------- | ------------------ | ---------------------- |
-| lab1 | Remote State & Layered Architecture | Secure azurerm backend, state locking, versioning, cross-layer data | Storage Account, Resource Group, VNet, Subnets, Linux VM | Basic workflow: init/plan/apply locally |
-| lab2 | Landing Zone Foundation with AVM | CAF hierarchy, management groups, multi-subscription networking | Management Groups, Log Analytics, Hub VNet, Firewall (logical) | Module composition & multi-provider patterns |
-| lab3 | Advanced Policy as Code & Remediation | Initiative + deployIfNotExists + remediation | Azure Policy (definitions, initiative, assignments), Log Analytics | Policy graph, remediation tasks via Terraform |
-| lab4 | Production-Grade GitHub Actions Pipeline | OIDC auth, multi-env plan/apply, approvals | (Reuses lab1 infra) | GitHub Actions (plan/apply workflows) |
-| lab5 | Terraform Quality Gate & Release Automation | Module test, lint, security | Terratest, TFLint, Checkov, GitHub Actions | Automated quality gates |
-| lab6 | Import Existing Azure Resources | Declarative & imperative import, drift detection, incremental adoption | Storage, VNet, Subnet, Public IP | Import blocks, state surgery |
+| 1 | Remote State & Layered Deployment | Secure azurerm backend, state locking, versioning, cross-layer data | Storage Account, Resource Group, VNet, Subnets, Linux VM | Basic workflow: init/plan/apply locally |
+| 2 | Landing Zone Foundation with AVM | CAF hierarchy, management groups, multi-subscription networking | Management Groups, Log Analytics, Hub VNet, Firewall (logical) | Module composition & multi-provider patterns |
+| 3 | Advanced Policy as Code & Remediation | Initiative + deployIfNotExists + remediation | Azure Policy (definitions, initiative, assignments), Log Analytics | Policy graph, remediation tasks via Terraform |
+| 4 | Production-Grade GitHub Actions Pipeline | OIDC auth, multi-env plan/apply, approvals | (Reuses lab1 infra) | GitHub Actions (plan/apply workflows) |
+| 5 | Terraform Quality Gate & Release Automation | Module test, lint, security | Terratest, TFLint, Checkov, GitHub Actions | Automated quality gates |
+| 6 | Import Existing Azure Resources | Declarative & imperative import, drift detection, incremental adoption | Storage, VNet, Subnet, Public IP | Import blocks, state surgery |
 
 ---
-## Prerequisites (Before Any Lab)
-1. Azure Subscription with Contributor (or Owner for management group operations in lab2) rights.
-2. Azure CLI installed and logged in: `az login`.
-3. Terraform >= 1.7 installed.
-4. Pin Terraform version via required_version (e.g. `>= 1.7, < 1.8`) or a `.terraform-version` file for consistency across environments.
-5. Git installed and repository cloned locally.
-6. VS Code with Terraform & (optionally) GitHub Copilot extensions.
-7. Environment variables (adjust naming):
-   - `export TF_VAR_location="southeastasia"`
-   - `export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)`
-   - For multi-subscription in lab2: set `MGMT_SUB_ID` and `CONN_SUB_ID` if distinct.
-8. Enable feature flags (if required) for any preview resources you use.
-9. (Recommended) Enable Storage Account advanced protections when creating state backend: soft delete (>= 7 days), blob versioning, TLS 1.2+, public network access disabled (use private endpoint or trusted services as needed).
-
-> Cost Control: Destroy lab resources when finished (`terraform destroy`) except shared state RG/storage if reused. Use `az resource list --tag lab=labX -o table` to confirm cleanup.
+## Prerequisites
+1. Azure Subscription with Contributor (or Owner for management group operations in lab2) rights. ([Create one](https://azure.microsoft.com/free))
+2. Azure CLI installed and logged in: `az login`. ([Install guide](https://learn.microsoft.com/cli/azure/install-azure-cli))
+3. Terraform >= 1.7 installed. ([Install Terraform](https://developer.hashicorp.com/terraform/install))
+4. Git installed and repository cloned locally. ([Download Git](https://git-scm.com/downloads))
+5. VS Code ([Download](https://code.visualstudio.com/Download)) with Terraform extension ([HashiCorp Terraform](https://marketplace.visualstudio.com/items?itemName=HashiCorp.terraform)) & (optionally) GitHub Copilot extension ([GitHub Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot)).
+6. Enable feature flags (if required) for any preview resources you use. ([Preview features overview](https://learn.microsoft.com/azure/azure-resource-manager/management/preview-features))
+7. Cost Control: Destroy challenge resources when finished (`terraform destroy`) except shared state RG/storage if reused.
 
 ---
-## Lab 1: Remote State & Layered Architecture
+## Challenge 1: Remote State & Layered Deployment
 ### Objective
-Implement a production-ready Terraform remote state and layered infrastructure model that:
-- Creates a secure Azure Blob Storage backend (versioning, soft delete, locking via blob lease).
-- Segregates concerns into discrete state files (backend bootstrap, networking, application).
+Implement a production-ready Terraform remote state and layered deployment model that:
+- Creates a secure Azure Blob Storage backend for storing terraform state (versioning, soft delete, locking via blob lease).
 - Establishes a layered dependency pattern (network layer outputs consumed by application layer).
+- Segregates each layer into its own isolated remote state file (e.g., networking, application).
 - Uses terraform_remote_state data sources for cross-layer data access (e.g., subnet IDs, NSG names).
 - Applies naming + resource group conventions suitable for multi-environment expansion.
 - Demonstrates safe change workflows (plan/apply per layer, explicit dependency ordering).
@@ -44,14 +37,15 @@ Implement a production-ready Terraform remote state and layered infrastructure m
 - Maintains idempotency (repeat apply yields zero changes per layer).
 
 ### Success Criteria
-- ✅ Secure Azure Blob Storage backend configured with versioning and soft delete
+- ✅ Azure Blob Storage backend configured with versioning and soft delete
 - ✅ State locking implemented using Azure Storage Account blob lease
-- ✅ Three independent state files: backend, networking, and application
+- ✅ Two independent state files: networking, and application
 - ✅ Application layer successfully references networking outputs via remote state
 - ✅ Linux VM deployed in subnet created by networking layer
 - ✅ Proper resource group and storage account security configurations
 
 #### Resources
+- Terraform Deployment with Layered Architecture: https://terrateam.io/blog/terraform-deployment-with-layered-architecture
 - Terraform Backends (Azure Storage): https://developer.hashicorp.com/terraform/language/settings/backends/azurerm
 - Remote State Data Source: https://developer.hashicorp.com/terraform/language/state/remote-state-data
 - Azure Storage security features (soft delete, versioning): https://learn.microsoft.com/azure/storage/blobs/blob-versioning-overview
@@ -60,10 +54,10 @@ Implement a production-ready Terraform remote state and layered infrastructure m
 - azurerm Provider docs: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs
 - Useful commands: terraform init / plan / apply / state list / output
 
-For solution, see [Lab 1 README](solutions/lab1/README.md).
+For solution, see [Challenge 1 README](solutions/lab1/README.md).
 
 ---
-## Lab 2: Landing Zone Foundation with AVM
+## Challenge 2: Landing Zone Foundation with AVM
 ### Objective
 Implement a CAF-aligned multi-subscription Azure Landing Zone that:
 - Establishes a management group hierarchy (root, platform, landing-zones, connectivity, management, online/corp).
@@ -94,10 +88,10 @@ Implement a CAF-aligned multi-subscription Azure Landing Zone that:
 - Provider aliases pattern: https://developer.hashicorp.com/terraform/language/providers/configuration#alias-multiple-provider-configurations
 - Cross subscription with azurerm: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/multiple-subscriptions
 
-For solution, see [Lab 2 README](solutions/lab2/README.md).
+For solution, see [Challenge 2 README](solutions/lab2/README.md).
 
 ---
-## Lab 3: Advanced Policy as Code & Remediation
+## Challenge 3: Advanced Policy as Code & Remediation
 ### Objective
 Implement enterprise-grade Azure Policy governance that:
 - Authors custom policy definitions for tag enforcement (modify), disk encryption (deny), and Azure Monitor Agent deployment (deployIfNotExists).
@@ -131,10 +125,10 @@ Implement enterprise-grade Azure Policy governance that:
 - Tag governance (CAF): https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/naming-and-tagging
 - Validation commands: az policy definition list, az policy state list, az resource show
 
-For solution, see [Lab 3 README](solutions/lab3/README.md).
+For solution, see [Challenge 3 README](solutions/lab3/README.md).
 
 ---
-## Lab 4: Production-Grade GitHub Actions CI/CD Pipeline
+## Challenge 4: Production-Grade GitHub Actions CI/CD Pipeline
 ### Objective
 Implement a production-grade multi-environment Terraform deployment pipeline that:
 - Authenticates to Azure using GitHub OIDC (no long‑lived client secrets).
@@ -167,10 +161,10 @@ Implement a production-grade multi-environment Terraform deployment pipeline tha
 - Least privilege RBAC guidance: https://learn.microsoft.com/azure/role-based-access-control/best-practices
 - Caching in Actions (Terraform plugin cache): https://docs.github.com/actions/using-workflows/caching-dependencies-to-speed-up-workflows
 
-For solution, see [Lab 4 README](solutions/lab4/README.md).
+For solution, see [Challenge 4 README](solutions/lab4/README.md).
 
 ---
-## Lab 5: Terraform Quality Gate & Integration Tests
+## Challenge 5: Terraform Quality Gate & Integration Tests
 ### Objective
 Implement an end-to-end Terraform quality and testing workflow that:
 - Create a Terraform module with an example and Terratest integration tests.
@@ -198,10 +192,10 @@ Implement an end-to-end Terraform quality and testing workflow that:
 - Terraform fmt / validate: https://developer.hashicorp.com/terraform/cli/commands/fmt
 - Go testing (Terratest base): https://go.dev/doc/tutorial/add-a-test
 
-For solution, see [Lab 5 README](solutions/lab5/README.md).
+For solution, see [Challenge 5 README](solutions/lab5/README.md).
 
 ---
-## Lab 6: Import Existing Azure Resources & Drift Management
+## Challenge 6: Import Existing Azure Resources & Drift Management
 ### Objective
 Adopt pre-existing (brownfield) Azure resources into Terraform without recreation by:
 - Using Terraform 1.5+ declarative `import {}` blocks to hydrate state before planning.
@@ -225,4 +219,4 @@ Adopt pre-existing (brownfield) Azure resources into Terraform without recreatio
 - Drift Detection: https://developer.hashicorp.com/terraform/cli/commands/plan
 - State Management: https://developer.hashicorp.com/terraform/cli/state
 
-For solution, see [Lab 6 README](solutions/lab6/README.md).
+For solution, see [Challenge 6 README](solutions/lab6/README.md).
