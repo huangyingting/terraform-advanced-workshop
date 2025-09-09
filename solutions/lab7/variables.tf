@@ -1,7 +1,7 @@
 variable "location" {
   description = "Azure region for resources"
   type        = string
-  default     = "eastus"
+  default     = "southeastasia"
 }
 
 variable "resource_group_name" {
@@ -14,8 +14,8 @@ variable "tags" {
   description = "Common resource tags"
   type        = map(string)
   default = {
-    project = "terraform-advanced-lab7"
-    owner   = "example"
+    Project = "lab7"
+    Owner   = "platform-team"
   }
 }
 

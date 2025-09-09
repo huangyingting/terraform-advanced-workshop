@@ -3,7 +3,7 @@
 This challenge series maps directly to six advanced Terraform + Azure focus areas: remote state & layered deployment, landing zone foundation with AVM, advanced policy & remediation, production-grade GitHub Actions CI/CD, Terraform quality gates with testing, and import of existing resources.
 
 ## Challenges
-| Challenge | Title | Core Focus | Key Azure Services | GitHub / Tooling Focus |
+| Challenge | Title | Core Focus | Key Azure Services | Focus |
 | --- | ----- | ---------- | ------------------ | ---------------------- |
 | 1 | Remote State & Layered Deployment | Secure azurerm backend, state locking, versioning, cross-layer data | Storage Account, Resource Group, VNet, Subnets, Linux VM | Basic workflow: init/plan/apply locally |
 | 2 | Landing Zone Foundation with AVM | CAF hierarchy, management groups, multi-subscription networking | Management Groups, Log Analytics, Hub VNet, Firewall (logical) | Module composition & multi-provider patterns |
@@ -11,6 +11,7 @@ This challenge series maps directly to six advanced Terraform + Azure focus area
 | 4 | Production-Grade GitHub Actions Pipeline | OIDC auth, multi-env plan/apply, approvals | VM, Log Analytics | GitHub Actions (plan/apply workflows) |
 | 5 | Terraform Quality Gate & Release Automation | Module test, lint, security | Terratest, TFLint, Checkov, GitHub Actions | Automated quality gates |
 | 6 | Import Existing Azure Resources | Declarative & imperative import, drift detection, incremental adoption | Storage, VNet, Subnet, Public IP | Import blocks, state surgery |
+| 7 | Terraform Cloud + GitHub VCS Workflow | Integrate Terraform Cloud (TFC) with a GitHub repository to provision secure Azure infrastructure using remote state | Storage | Terraform Cloud |
 
 ---
 ## Prerequisites
@@ -220,3 +221,38 @@ Adopt pre-existing (brownfield) Azure resources into Terraform without recreatio
 - State Management: https://developer.hashicorp.com/terraform/cli/state
 
 For solution, see [Challenge 6 README](solutions/lab6/README.md).
+
+
+---
+## Challenge 7: Terraform Cloud + GitHub VCS Workflow
+### Objective
+Integrate Terraform Cloud (TFC) with GitHub for a remote execution workflow that:
+- Uses a VCS-driven TFC workspace (working directory `solutions/lab7`).
+- Leverages Azure OIDC (federated workload identity) – no client secrets.
+- Stores state remotely in Terraform Cloud (not Azure Storage for this lab) with run tasks / policy hooks ready.
+- Differentiates plan vs apply phases via distinct federated credentials (subject includes `run_phase`).
+- Manages sensitive vs non-sensitive variables appropriately (env vars for auth, TF vars for config).
+- Auto-generates a globally unique storage account name (random suffix) while remaining idempotent.
+- Supports speculative plans on pull requests and applies on main merges.
+- Provides a pattern for attaching cost/security run tasks or Sentinel policies.
+
+### Success Criteria
+- ✅ TFC workspace connected to repo and directory `solutions/lab7` (remote execution, VCS workflow).
+- ✅ Azure federated credentials created for both plan and apply phases (two subjects with `run_phase`).
+- ✅ Environment variables set in TFC: `TFC_AZURE_PROVIDER_AUTH`, `TFC_AZURE_RUN_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID` (and no client secret required).
+- ✅ Successful speculative plan on a PR (no apply) and successful apply after merge (auto or manual depending on configuration).
+- ✅ State visible in Terraform Cloud with correct outputs (resource group + storage account names).
+- ✅ Randomized storage account suffix produced when `storage_account_suffix` unspecified (consistent across runs in workspace).
+- ✅ Idempotent re-apply yields zero changes.
+- ✅ (Optional) Run task or placeholder Sentinel policy ready / documented.
+
+### Resources
+- Terraform Cloud VCS Workflows: https://developer.hashicorp.com/terraform/cloud-docs/workspaces/vcs
+- AzureRM Provider OIDC Auth: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/service_principal_oidc
+- Workload Identity Federation (Azure AD): https://learn.microsoft.com/entra/identity-platform/workload-identity-federation
+- Terraform Cloud Run Tasks: https://developer.hashicorp.com/terraform/cloud-docs/run-tasks
+- Sentinel Policies Overview: https://developer.hashicorp.com/terraform/cloud-docs/policy-enforcement
+- Random Provider: https://registry.terraform.io/providers/hashicorp/random/latest/docs
+
+For solution, see [Challenge 7 README](solutions/lab7/README.md).
+

@@ -74,7 +74,7 @@ git clone <repo>
 cd terraform-advanced-workshop/solutions/lab5
 export GITHUB_REPO="<org>/<repo>"
 # optional
-export APP_NAME="lab5-oidc-app"
+export APP_NAME="github-terraform-cicd"
 ./prepare.sh
 ```
 Script actions:

@@ -110,10 +110,10 @@ Summary:
 
 Terraform Cloud Configuration:
   Set environment variables in the workspace:
-    ARM_CLIENT_ID=${APP_ID}
+    TFC_AZURE_PROVIDER_AUTH=true
+    TFC_AZURE_RUN_CLIENT_ID=${APP_ID}
     ARM_TENANT_ID=${TENANT_ID}
-    ARM_SUBSCRIPTION_ID=${SUBSCRIPTION_ID}
-    ARM_USE_OIDC=true
+    ARM_SUBSCRIPTION_ID=${SUBSCRIPTION_ID}    
   (No client secret required - federated identity in use.)
 
 If authentication fails:

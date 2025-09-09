@@ -1,6 +1,6 @@
-## Lab 7 – Terraform Cloud + GitHub VCS Workflow Deploying Azure
+## Lab 7 – Terraform Cloud + GitHub VCS Workflow
 
-Integrate Terraform Cloud (TFC) with a GitHub repository to provision secure Azure infrastructure using remote state, run tasks / policies, and a GitHub Actions pipeline hand‑off. This lab focuses on the end‑to‑end workflow: local authoring → VCS trigger in TFC → optional GitHub Actions orchestration → Azure apply with least privilege.
+Integrate Terraform Cloud (TFC) with a GitHub repository to provision secure Azure infrastructure using remote state, run tasks / policies. This lab focuses on the end‑to‑end workflow: local authoring → VCS trigger in TFC → Azure apply with least privilege.
 
 ---
 
@@ -12,7 +12,6 @@ By the end you will be able to:
 * Manage sensitive & non‑sensitive variables in TFC (env vs Terraform vars)
 * Enforce a simple Sentinel / OPA-style policy check (conceptual stub) or run tasks hook (e.g. cost)
 * Trigger plans via PRs and applies via merges using the VCS workflow
-* (Optional) Chain a GitHub Action after successful TFC apply (notification / deployment step)
 * Detect drift with speculative plan and optional scheduled runs
 
 ## 2. What You Will Build
@@ -54,11 +53,11 @@ Execution mode: Remote (Terraform Cloud runs terraform; state stored in TFC). Az
 | Variables | Terraform Cloud org name, desired workspace name |
 
 ## 5. Quick Start (High Level)
-1. Create / identify Azure Service Principal with federated credential for GitHub (reuse Lab 4/5 if available) OR create one dedicated to lab7.
+1. Create Azure Service Principal with federated credential for Terraform Cloud.
 2. In Terraform Cloud: create organization (if new) and a workspace (VCS workflow) pointing to this repo folder `solutions/lab7`.
 3. Add variables in TFC:
    * Terraform variables (Category: Terraform): `location`, `resource_group_name` (optional overrides)
-   * Environment variables (Category: Env): `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID` (sensitive as needed)
+   * Environment variables (Category: Env): `TFC_AZURE_PROVIDER_AUTH`, `TFC_AZURE_RUN_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`
 4. Replace placeholders in `versions.tf` cloud block (organization + workspace name) OR remove and set via CLI/TFC workspace settings.
 5. Commit & push a change – TFC queues a plan (speculative for PR, confirm/apply on main if auto‑apply enabled).
 6. Observe plan & apply in TFC UI; inspect state & outputs.
@@ -70,7 +69,7 @@ solutions/lab7/
   versions.tf
   variables.tf
   main.tf
-  (optional) prepare.sh
+  prepare.sh
 ```
 
 ## 7. Terraform Cloud Workspace Setup
@@ -84,27 +83,25 @@ solutions/lab7/
 ### 7.1 Variables in TFC
 | Type | Name | Example | Sensitive | Notes |
 |------|------|---------|-----------|-------|
-| Env | ARM_CLIENT_ID | <appId> | Yes | Azure auth |
+| Env | TFC_AZURE_RUN_CLIENT_ID | <appId> | Yes | Azure auth |
+| Env | TFC_AZURE_PROVIDER_AUTH | true | No | Azure auth |
 | Env | ARM_TENANT_ID | <tenantId> | No | |
 | Env | ARM_SUBSCRIPTION_ID | <subId> | No | |
-| Terraform | location | eastus | No | Overrides default |
+| Terraform | location | southeastasia | No | Overrides default |
 | Terraform | resource_group_name | lab7-rg | No | Custom RG name |
-| Terraform | storage_account_suffix | xyz123 | No | Ensure global uniqueness |
 
 (If using workload identity federation directly from TFC: export env vars from the SP. For OIDC from TFC to Azure, currently use a client secret or workload identity – prefer secretless where GA; else store CLIENT_SECRET as env var sensitive.)
 
-## 8. Azure Service Principal (Federated) Creation (If Needed)
-Use existing script from earlier labs adapting environment claims, or manually:
+## 8. Azure Service Principal (Federated) Creation
+Create an App Registration + Service Principal with a federated credential for Terraform Cloud.
 ```bash
-APP_NAME="tfc-lab7-sp"
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-TENANT_ID=$(az account show --query tenantId -o tsv)
-az ad app create --display-name "$APP_NAME" --query appId -o tsv
-# Create service principal
-APP_ID=$(az ad app list --display-name "$APP_NAME" --query "[0].appId" -o tsv)
-az ad sp create --id "$APP_ID"
-az role assignment create --assignee "$APP_ID" --role Contributor --scope "/subscriptions/$SUBSCRIPTION_ID"
-# (Optional) Add federated credential referencing GitHub repo (subject patterns as in lab4)
+cd terraform-advanced-workshop/solutions/lab7
+export TFC_ORG="<your_org>"
+export TFC_PROJECT="<project_name>"
+export TFC_WORKSPACE="<workspace_name>"
+# optional
+export APP_NAME="tfc-cicd"
+./prepare.sh
 ```
 Export values into TFC env vars.
 

@@ -1,5 +1,13 @@
+resource "random_string" "sa" {
+  length  = 6
+  upper   = false
+  lower   = true
+  numeric = true
+  special = false
+}
+
 locals {
-  sa_name = lower(replace("lab7${var.storage_account_suffix}", "-", ""))
+  sa_name = lower(replace("lab7sa${random_string.sa.result}", "-", ""))
 }
 
 resource "azurerm_resource_group" "rg" {

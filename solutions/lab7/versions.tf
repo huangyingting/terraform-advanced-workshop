@@ -3,13 +3,20 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.108.0"
+      version = ">= 3.25.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.5.0"
     }
   }
 }
 
 provider "azurerm" {
   features {}
-  use_cli  = false
-  use_oidc = true
+#   use_cli  = false
+#   use_oidc = true
 }
+
+# random provider has no configuration
+provider "random" {}
