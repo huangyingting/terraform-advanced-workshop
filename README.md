@@ -3,15 +3,15 @@
 This challenge series maps directly to six advanced Terraform + Azure focus areas: remote state & layered deployment, landing zone foundation with AVM, advanced policy & remediation, production-grade GitHub Actions CI/CD, Terraform quality gates with testing, and import of existing resources.
 
 ## Challenges
-| Challenge | Title | Core Focus | Key Azure Services | Focus |
-| --- | ----- | ---------- | ------------------ | ---------------------- |
-| 1 | Remote State & Layered Deployment | Secure azurerm backend, state locking, versioning, cross-layer data | Storage Account, Resource Group, VNet, Subnets, Linux VM | Basic workflow: init/plan/apply locally |
-| 2 | Landing Zone Foundation with AVM | CAF hierarchy, management groups, multi-subscription networking | Management Groups, Log Analytics, Hub VNet, Firewall (logical) | Module composition & multi-provider patterns |
-| 3 | Advanced Policy as Code & Remediation | Initiative + deployIfNotExists + remediation | Azure Policy (definitions, initiative, assignments), Log Analytics | Policy graph, remediation tasks via Terraform |
-| 4 | Production-Grade GitHub Actions Pipeline | OIDC auth, multi-env plan/apply, approvals | VM, Log Analytics | GitHub Actions (plan/apply workflows) |
-| 5 | Terraform Quality Gate & Release Automation | Module test, lint, security | Terratest, TFLint, Checkov, GitHub Actions | Automated quality gates |
-| 6 | Import Existing Azure Resources | Declarative & imperative import, drift detection, incremental adoption | Storage, VNet, Subnet, Public IP | Import blocks, state surgery |
-| 7 | Terraform Cloud + GitHub VCS Workflow | Integrate Terraform Cloud (TFC) with a GitHub repository to provision secure Azure infrastructure using remote state | Storage | Terraform Cloud |
+| Challenge | Title | Core Focus | Key Azure Services |
+| --- | ----- | ---------- | ------------------ |
+| 1 | [Remote State & Layered Deployment](#challenge-1-remote-state--layered-deployment) | Secure azurerm backend, state locking, versioning, cross-layer data | Storage Account, Resource Group, VNet, Subnets, Linux VM |
+| 2 | [Landing Zone Foundation with AVM](#challenge-2-landing-zone-foundation-with-avm) | CAF hierarchy, management groups, multi-subscription networking | Management Groups, Log Analytics, Hub VNet, Firewall (logical) |
+| 3 | [Advanced Policy as Code & Remediation](#challenge-3-advanced-policy-as-code--remediation) | Initiative + deployIfNotExists + remediation | Azure Policy (definitions, initiative, assignments), Log Analytics |
+| 4 | [Production-Grade GitHub Actions Pipeline](#challenge-4-production-grade-github-actions-cicd-pipeline) | OIDC auth, multi-env plan/apply, approvals | VM, Log Analytics |
+| 5 | [Terraform Quality Gate & Release Automation](#challenge-5-terraform-quality-gate--integration-tests) | Module test, lint, security | Terratest, TFLint, Checkov, GitHub Actions |
+| 6 | [Import Existing Azure Resources](#challenge-6-import-existing-azure-resources--drift-management) | Declarative & imperative import, drift detection, incremental adoption | Storage, VNet, Subnet, Public IP |
+| 7 | [Terraform Cloud + GitHub VCS Workflow](#challenge-7-terraform-cloud--github-vcs-workflow) | Integrate Terraform Cloud (TFC) with a GitHub repository to provision secure Azure infrastructure using remote state | Storage |
 
 ---
 ## Prerequisites
