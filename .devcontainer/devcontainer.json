@@ -1,0 +1,34 @@
+{
+  "name": "terraform-advanced-workshop",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/azure-cli:1": {},
+    "ghcr.io/devcontainers/features/terraform:1": {
+      "version": "latest"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terraform.codelens.enabled": true,
+        "terraform.languageServer": {
+          "enabled": true
+        },
+        "terraform.indexing": {
+          "enabled": true,
+          "liveIndexing": true
+        },
+        "terraform.telemetry.enabled": false
+      },
+      "extensions": [
+        "hashicorp.terraform",
+        "GitHub.copilot"
+      ]
+    }
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.terraform.d/plugin-cache,target=/home/vscode/.terraform.d/plugin-cache,type=bind"
+  ],
+  "remoteUser": "vscode",
+  "postCreateCommand": "set -e; terraform -version; az version | head -n 5; echo 'Devcontainer ready.'"
+}
