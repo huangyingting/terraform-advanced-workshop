@@ -8,7 +8,7 @@ This challenge series maps directly to six advanced Terraform + Azure focus area
 | 1 | Remote State & Layered Deployment | Secure azurerm backend, state locking, versioning, cross-layer data | Storage Account, Resource Group, VNet, Subnets, Linux VM | Basic workflow: init/plan/apply locally |
 | 2 | Landing Zone Foundation with AVM | CAF hierarchy, management groups, multi-subscription networking | Management Groups, Log Analytics, Hub VNet, Firewall (logical) | Module composition & multi-provider patterns |
 | 3 | Advanced Policy as Code & Remediation | Initiative + deployIfNotExists + remediation | Azure Policy (definitions, initiative, assignments), Log Analytics | Policy graph, remediation tasks via Terraform |
-| 4 | Production-Grade GitHub Actions Pipeline | OIDC auth, multi-env plan/apply, approvals | (Reuses lab1 infra) | GitHub Actions (plan/apply workflows) |
+| 4 | Production-Grade GitHub Actions Pipeline | OIDC auth, multi-env plan/apply, approvals | VM, Log Analytics | GitHub Actions (plan/apply workflows) |
 | 5 | Terraform Quality Gate & Release Automation | Module test, lint, security | Terratest, TFLint, Checkov, GitHub Actions | Automated quality gates |
 | 6 | Import Existing Azure Resources | Declarative & imperative import, drift detection, incremental adoption | Storage, VNet, Subnet, Public IP | Import blocks, state surgery |
 
