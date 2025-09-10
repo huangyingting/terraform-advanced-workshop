@@ -80,18 +80,6 @@ solutions/lab7/
 5. Apply Method: (a) Auto apply (fast iteration) or (b) Manual (safer for production patterns).
 6. Save workspace.
 
-### 7.1 Variables in TFC
-| Type | Name | Example | Sensitive | Notes |
-|------|------|---------|-----------|-------|
-| Env | TFC_AZURE_RUN_CLIENT_ID | <appId> | Yes | Azure auth |
-| Env | TFC_AZURE_PROVIDER_AUTH | true | No | Azure auth |
-| Env | ARM_TENANT_ID | <tenantId> | No | |
-| Env | ARM_SUBSCRIPTION_ID | <subId> | No | |
-| Terraform | location | southeastasia | No | Overrides default |
-| Terraform | resource_group_name | lab7-rg | No | Custom RG name |
-
-(If using workload identity federation directly from TFC: export env vars from the SP. For OIDC from TFC to Azure, currently use a client secret or workload identity – prefer secretless where GA; else store CLIENT_SECRET as env var sensitive.)
-
 ## 8. Azure Service Principal (Federated) Creation
 Create an App Registration + Service Principal with a federated credential for Terraform Cloud.
 ```bash
@@ -105,12 +93,25 @@ export APP_NAME="tfc-cicd"
 ```
 Export values into TFC env vars.
 
-## 9. Code Walkthrough
+### 9. Variables in TFC
+Configure these variables in the TFC workspace (Settings → Variables):
+| Type | Name | Example | Sensitive | Notes |
+|------|------|---------|-----------|-------|
+| Env | TFC_AZURE_RUN_CLIENT_ID | <appId> | Yes | Azure auth |
+| Env | TFC_AZURE_PROVIDER_AUTH | true | No | Azure auth |
+| Env | ARM_TENANT_ID | <tenantId> | No | |
+| Env | ARM_SUBSCRIPTION_ID | <subId> | No | |
+| Terraform | location | southeastasia | No | Overrides default |
+| Terraform | resource_group_name | lab7-rg | No | Custom RG name |
+
+(If using workload identity federation directly from TFC: export env vars from the SP. For OIDC from TFC to Azure, currently use a client secret or workload identity – prefer secretless where GA; else store CLIENT_SECRET as env var sensitive.)
+
+## 10. Code Walkthrough
 `versions.tf`: Configures provider + Terraform Cloud remote backend (update placeholders).
 `variables.tf`: Declares Azure + naming variables.
 `main.tf`: Creates a resource group and a storage account (simple LRS, TLS 1.2, tagged). Demonstrates deterministic SA naming with optional suffix.
 
-## 10. Policy / Run Tasks (Conceptual Extension)
+## 11. Policy / Run Tasks (Conceptual Extension)
 You can attach a cost estimation or policies:
 1. Organization Settings → Cost estimation → Enable cost estimation for all workspaces.
 2. Organization Settings → Policies → Create a new policy.
@@ -124,16 +125,16 @@ import "tfplan/v2" as tfplan
 main = rule { all tfplan.resource_changes as r { "tags" in r.change.after and "project" in r.change.after.tags } }
 ```
 
-## 11. GitHub PR Flow
+## 12. GitHub PR Flow
 * Open PR → TFC speculative plan runs (no apply).
 * Merge PR → main branch push triggers new plan; if auto‑apply enabled, resources change.
 * Use TFC notifications (optional) to post status back to VCS checks.
 
-## 12. Cleanup
+## 13. Cleanup
 In TFC workspace: Actions → Queue destroy plan → Confirm destroy → Apply.
 Then delete workspace (optionally) and Azure role assignment / app registration if dedicated.
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
 | Workspace stuck pending | Missing variable or credentials | Add env vars / re-run |
@@ -142,14 +143,14 @@ Then delete workspace (optionally) and Azure role assignment / app registration 
 | No speculative plan on PR | VCS connection not installed | Reconnect GitHub integration |
 | Sentinel policy block | Tag missing / rule mismatch | Add required tag or adjust policy |
 
-## 14. Review Questions
+## 15. Review Questions
 1. When would you choose CLI-driven workspace vs VCS-driven?
 2. How do run tasks differ from Sentinel policies?
 3. What are pros/cons of auto-apply for production?
 4. How do you rotate Azure credentials without downtime in TFC?
 5. How do you extend this pattern for multi-environment (workspaces vs directories)?
 
-## 15. Next Extensions
+## 16. Next Extensions
 * Add Infracost run task for cost feedback
 * Introduce OPA policy evaluation via plan JSON export
 * Integrate notifications (Slack/Teams) using TFC notification triggers
