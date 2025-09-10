@@ -111,8 +111,9 @@ Export values into TFC env vars.
 `main.tf`: Creates a resource group and a storage account (simple LRS, TLS 1.2, tagged). Demonstrates deterministic SA naming with optional suffix.
 
 ## 10. Policy / Run Tasks (Conceptual Extension)
-You can attach a cost estimation or security run task:
-1. Organization Settings → Run Tasks → add (e.g., Infracost, Checkov). 
+You can attach a cost estimation or policies:
+1. Organization Settings → Cost estimation → Enable cost estimation for all workspaces.
+2. Organization Settings → Policies → Create a new policy.
 2. Workspace → Settings → Run Tasks → attach to pre-plan / post-plan.
 3. Re-run plan to see gating behavior.
 
@@ -128,17 +129,11 @@ main = rule { all tfplan.resource_changes as r { "tags" in r.change.after and "p
 * Merge PR → main branch push triggers new plan; if auto‑apply enabled, resources change.
 * Use TFC notifications (optional) to post status back to VCS checks.
 
-## 12. Drift Detection
-Strategies:
-* Scheduled TFC runs (API or dummy commit) to detect drift.
-* Terraform Cloud's speculative plan triggered via `tfc-agent` (self hosted) if needed.
-* Separate GitHub workflow nightly running `terraform plan -detailed-exitcode` (CLI) against same workspace (requires remote backend & token).
-
-## 13. Cleanup
+## 12. Cleanup
 In TFC workspace: Actions → Queue destroy plan → Confirm destroy → Apply.
 Then delete workspace (optionally) and Azure role assignment / app registration if dedicated.
 
-## 14. Troubleshooting
+## 13. Troubleshooting
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
 | Workspace stuck pending | Missing variable or credentials | Add env vars / re-run |
@@ -147,18 +142,16 @@ Then delete workspace (optionally) and Azure role assignment / app registration 
 | No speculative plan on PR | VCS connection not installed | Reconnect GitHub integration |
 | Sentinel policy block | Tag missing / rule mismatch | Add required tag or adjust policy |
 
-## 16. Review Questions
+## 14. Review Questions
 1. When would you choose CLI-driven workspace vs VCS-driven?
 2. How do run tasks differ from Sentinel policies?
 3. What are pros/cons of auto-apply for production?
 4. How do you rotate Azure credentials without downtime in TFC?
 5. How do you extend this pattern for multi-environment (workspaces vs directories)?
 
-## 17. Next Extensions
+## 15. Next Extensions
 * Add Infracost run task for cost feedback
 * Introduce OPA policy evaluation via plan JSON export
 * Integrate notifications (Slack/Teams) using TFC notification triggers
 * Migrate to workload identity (secretless) if/when fully supported
 
----
-This lab emphasizes workflow integration simplicity. Expand resources (AKS, App Service, Key Vault) in future labs using same TFC patterns.

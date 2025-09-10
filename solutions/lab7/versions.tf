@@ -14,8 +14,8 @@ terraform {
 
 provider "azurerm" {
   features {}
-#   use_cli  = false
-#   use_oidc = true
+  use_cli  = false
+  use_oidc = true
 }
 
 # random provider has no configuration
