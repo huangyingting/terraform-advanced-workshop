@@ -16,6 +16,7 @@ provider "azurerm" {
   features {}
   use_cli  = false
   use_oidc = true
+  storage_use_azuread = true
 }
 
 # random provider has no configuration
