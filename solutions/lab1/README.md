@@ -67,11 +67,21 @@ Flow:
 ## 6. Environment Preparation
 ```bash
 cd solutions/lab1
+az login  # Ensure Azure CLI auth
+export ARM_SUBSCRIPTION_ID=<your-subscription-id>
 chmod +x prepare.sh
+./prepare.sh
+cd infrastructure && terraform init -backend-config=infrastructure.tfbackend
+terraform plan
+terraform apply
+cd ../application && terraform init -backend-config=application.tfbackend
+terraform plan
+terraform apply
+```
 # Optional overrides
-RESOURCE_GROUP=my-tf-rg LOCATION=westeurope ./prepare.sh
+# RESOURCE_GROUP=my-tf-rg LOCATION=westeurope ./prepare.sh
 # Default location variable used by both layers
-echo $TF_VAR_location  # set externally if desired
+# echo $TF_VAR_location  # set externally if desired
 ```
 Outputs: resource group, storage account, two `.tfbackend` files, tfvars for application.
 
