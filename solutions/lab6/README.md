@@ -81,6 +81,7 @@ If you see planned creates, the HCL doesn't precisely match remote settings—fi
 ## 9. Imperative Import (Optional Exercise)
 Comment out blocks in `import.tf`, then:
 ```bash
+rm terraform.tfstate terraform.tfstate.backup
 terraform state list
 terraform import azurerm_storage_account.imported \
   /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<name>
