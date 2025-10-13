@@ -115,6 +115,8 @@ If no workspace ID provided, one is created automatically.
 | 5 | Trigger non-compliance | Observe modify/deny/deployIfNotExists | Create extra VM / NSG |
 | 6 | Optional remediation run | Force remediation if needed | `az policy remediation create` |
 
+Visit this [link](https://portal.azure.com/#view/Microsoft_Azure_Policy/PolicyMenuBlade/~/Overview) to monitor compliance states.
+
 ## 8. Verification Commands (Grouped)
 ```bash
 terraform output
