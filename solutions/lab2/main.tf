@@ -20,7 +20,7 @@ module "alz_core" {
 
 module "management" {
   source  = "Azure/avm-ptn-alz-management/azurerm"
-  version = "~> 0.9"
+  version = "~> 0.8.0"
 
   providers = { azurerm = azurerm }
 
