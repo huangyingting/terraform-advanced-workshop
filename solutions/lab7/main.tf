@@ -16,6 +16,12 @@ resource "azurerm_resource_group" "rg" {
   tags     = var.tags
 }
 
+resource "azurerm_resource_group" "rg-2" {
+  name     = "${var.resource_group_name}-2"
+  location = var.location
+  tags     = var.tags
+}
+
 resource "azurerm_storage_account" "state" {
   name                     = substr(local.sa_name, 0, 24)
   resource_group_name      = azurerm_resource_group.rg.name
