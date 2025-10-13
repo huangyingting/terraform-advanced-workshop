@@ -94,7 +94,7 @@ export APP_NAME="tfc-cicd"
 Export values into TFC env vars.
 
 ### 9. Variables in TFC
-Configure these variables in the TFC workspace (Settings → Variables):
+Configure these variables in the TFC workspace (<Your workspace> → Variables):
 | Type | Name | Example | Sensitive | Notes |
 |------|------|---------|-----------|-------|
 | Env | TFC_AZURE_RUN_CLIENT_ID | <appId> | Yes | Azure auth |
