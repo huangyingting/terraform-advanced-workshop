@@ -12,7 +12,7 @@ on:
 
 
 concurrency:
-  group: terraform-deploy
+  group: terraform-apply
   cancel-in-progress: false
 
 permissions:
