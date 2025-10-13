@@ -8,19 +8,19 @@ resource "azurerm_resource_group" "hub_networking" {
   location = var.location
 }
 
-module "alz_core" {
-  source  = "Azure/avm-ptn-alz/azurerm"
-  version = "~> 0.13"
+# module "alz_core" {
+#   source  = "Azure/avm-ptn-alz/azurerm"
+#   version = "~> 0.13"
 
-  # Required parameters
-  architecture_name  = "alz"
-  location           = var.location
-  parent_resource_id = data.azurerm_client_config.current.tenant_id
-}
+#   # Required parameters
+#   architecture_name  = "alz"
+#   location           = var.location
+#   parent_resource_id = data.azurerm_client_config.current.tenant_id
+# }
 
 module "management" {
   source  = "Azure/avm-ptn-alz-management/azurerm"
-  version = "~> 0.8.0"
+  version = "~> 0.9.0"
 
   providers = { azurerm = azurerm }
 
@@ -29,6 +29,7 @@ module "management" {
   resource_group_name          = "rg-alz-management"
   automation_account_name      = "aa-alz-management"
   log_analytics_workspace_name = "law-alz-management"
+  
 }
 
 module "hub_network" {
