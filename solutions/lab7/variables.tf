@@ -16,6 +16,7 @@ variable "tags" {
   default = {
     Project = "lab7"
     Owner   = "platform-team"
+    Team    = "platform-team"
   }
 }
 
