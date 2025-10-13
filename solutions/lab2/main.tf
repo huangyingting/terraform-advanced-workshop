@@ -4,7 +4,7 @@
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_resource_group" "hub_networking" {
-  name     = "rg-hub-networking"
+  name     = "lab2-hub-networking-rg"
   location = var.location
 }
 
@@ -26,7 +26,7 @@ module "management" {
 
   # Required parameters
   location                     = var.location
-  resource_group_name          = "rg-alz-management"
+  resource_group_name          = "lab2-alz-management-rg"
   automation_account_name      = "aa-alz-management"
   log_analytics_workspace_name = "law-alz-management"
   
