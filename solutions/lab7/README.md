@@ -42,6 +42,87 @@ flowchart LR
 ```
 Execution mode: Remote (Terraform Cloud runs terraform; state stored in TFC). Azure credentials injected as environment variables referencing a Federated Credential (OIDC) Service Principal.
 
+Terraform Cloud workflow:
+```mermaid
+graph TB
+    subgraph "Developer Actions"
+        A[Developer Creates Branch] --> B[Modify Terraform Code]
+        B --> C[Commit Changes]
+        C --> D[Push to VCS]
+        D --> E[Create Pull Request]
+    end
+
+    subgraph "Terraform Cloud - Speculative Plan"
+        E --> F[Webhook Triggers TFC]
+        F --> G[Clone Repository]
+        G --> H[Run Speculative Plan]
+        H --> I[Post Plan to PR Comments]
+        I --> J{Changes Look Good?}
+        J -->|No| K[Update Code]
+        K --> D
+    end
+
+    subgraph "Code Review & Approval"
+        J -->|Yes| L[Team Reviews PR]
+        L --> M[Code Review Approval]
+        M --> N[Merge to Main Branch]
+    end
+
+    subgraph "Terraform Cloud - Apply Run"
+        N --> O[Webhook Triggers TFC]
+        O --> P[Clone Repository]
+        P --> Q[Initialize Terraform]
+        Q --> R[Generate Plan]
+        R --> S{Plan Successful?}
+        S -->|No| T[Notification Sent]
+        T --> U[Fix Issues]
+        U --> D
+    end
+
+    subgraph "Policy & Cost Checks"
+        S -->|Yes| V[Run Sentinel Policies]
+        V --> W[Cost Estimation]
+        W --> X{Policies Pass?}
+        X -->|No| Y[Policy Failed]
+        Y --> Z{Override Available?}
+        Z -->|Yes| AA[Manual Override]
+        Z -->|No| AB[Run Blocked]
+        AB --> U
+    end
+
+    subgraph "Apply Phase"
+        X -->|Yes| AC{Auto-Apply Enabled?}
+        AA --> AC
+        AC -->|No| AD[Awaiting Manual Approval]
+        AD --> AE[Operator Reviews Plan]
+        AE --> AF{Approve?}
+        AF -->|No| AG[Discard Run]
+        AF -->|Yes| AH[Apply Approved]
+        AC -->|Yes| AH
+        AH --> AI[Execute Apply]
+        AI --> AJ[Update Remote State]
+        AJ --> AK[Send Notifications]
+        AK --> AL[Infrastructure Updated ✓]
+    end
+
+    subgraph "Monitoring & Rollback"
+        AL --> AM{Issues Detected?}
+        AM -->|Yes| AN[Revert VCS Commit]
+        AN --> O
+        AM -->|No| AO[Success - Monitor]
+    end
+
+    style A fill:#e3f2fd
+    style E fill:#fff9c4
+    style I fill:#e1bee7
+    style N fill:#fff9c4
+    style AL fill:#c8e6c9
+    style T fill:#ffcdd2
+    style AB fill:#ffcdd2
+    style AG fill:#ffcdd2
+    style AO fill:#c8e6c9
+```
+
 ## 4. Prerequisites
 | Item | Details |
 |------|---------|
