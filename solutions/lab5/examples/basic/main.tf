@@ -36,19 +36,6 @@ resource "azurerm_resource_group" "example" {
   }
 }
 
-# Create a resource group for the example
-resource "azurerm_resource_group" "example-2" {
-  name     = "rg-lab5-example-${var.environment}-2"
-  location = var.location
-
-  tags = {
-    Environment = var.environment
-    Purpose     = "lab5-module-example"
-    CreatedBy   = "terraform"
-  }
-}
-
-
 # Deploy the web app module with enhanced configuration
 module "web_app" {
   source = "../../modules/web_app"
