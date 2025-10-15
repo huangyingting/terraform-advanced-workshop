@@ -14,6 +14,16 @@ resource "azurerm_resource_group" "main" {
   })
 }
 
+# Resource Group
+resource "azurerm_resource_group" "main-2" {
+  name     = "${var.project_name}-${var.environment}-rg-2"
+  location = var.location
+
+  tags = merge(var.tags, {
+    Environment = var.environment
+  })
+}
+
 # Virtual Network
 resource "azurerm_virtual_network" "main" {
   name                = "${var.project_name}-${var.environment}-vnet"
